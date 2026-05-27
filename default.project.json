@@ -8,7 +8,28 @@
         "$path": "src/shared"
       },
       "Assets": {
-        "$className": "Folder"
+        "$className": "Folder",
+        "ArcherTower": {
+          "$className": "Part",
+          "$properties": { "Size": [4, 10, 4], "Color": [1, 0, 0] }
+        },
+        "LightNode": {
+          "$className": "Part",
+          "$properties": { "Size": [2, 5, 2], "Color": [1, 1, 0], "Material": "Neon" }
+        },
+        "BasicEnemy": {
+          "$className": "Part",
+          "$properties": { "Size": [3, 4, 3], "Color": [0, 1, 0] }
+        },
+        "Base": {
+          "$className": "Part",
+          "$properties": { "Size": [10, 5, 10], "Color": [0, 0, 1] }
+        }
+      },
+      "RemoteEvents": {
+        "$className": "Folder",
+        "RequestPlacement": { "$className": "RemoteEvent" },
+        "UpdateMoney": { "$className": "RemoteEvent" }
       }
     },
 
