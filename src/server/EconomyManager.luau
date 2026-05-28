@@ -7,7 +7,7 @@ local Players = game:GetService("Players")
 local playerMoney: {[number]: number} = {}
 
 function EconomyManager.initPlayer(player: Player)
-	playerMoney[player.UserId] = 100 -- Starting money
+	playerMoney[player.UserId] = 500 -- Starting money (increased for testing)
 end
 
 function EconomyManager.getMoney(player: Player): number

@@ -29,7 +29,10 @@
       "RemoteEvents": {
         "$className": "Folder",
         "RequestPlacement": { "$className": "RemoteEvent" },
-        "UpdateMoney": { "$className": "RemoteEvent" }
+        "UpdateMoney": { "$className": "RemoteEvent" },
+        "UpdateWave": { "$className": "RemoteEvent" },
+        "UpdateBaseHP": { "$className": "RemoteEvent" },
+        "UpdateDayNight": { "$className": "RemoteEvent" }
       }
     },
 
