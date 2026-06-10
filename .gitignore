@@ -12,3 +12,8 @@ sourcemap.json
 mcp.json
 
 *.pdf
+
+asset-spec.md
+*.fbx
+*.blend
+*.blend1
