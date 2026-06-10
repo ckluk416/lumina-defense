@@ -4,25 +4,31 @@ local CombatManager = {}
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
-local TowerAttack = require(game.ReplicatedStorage.Shared.TowerAttack)
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TowerAttack = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("TowerAttack") :: ModuleScript)
 local EnemyAI = require(script.Parent:WaitForChild("EnemyAI") :: ModuleScript)
 
 -- Hardcoded Tower Stats
 local TOWER_STATS = {
 	["ArcherTower_Roblox"] = {
 		isLightNode = false,
+		isAOE = false,
 		damage = 10,
 		range = 35,
 		fireRate = 0.8
 	},
 	["MageTower_Roblox"] = {
 		isLightNode = false,
+		isAOE = true,
+		aoeRadius = 12,
 		damage = 25,
 		range = 30,
 		fireRate = 1.5
 	},
 	["CannonTower_Roblox"] = {
 		isLightNode = false,
+		isAOE = true,
+		aoeRadius = 16,
 		damage = 40,
 		range = 25,
 		fireRate = 2.5
@@ -128,10 +134,53 @@ RunService.Heartbeat:Connect(function(deltaTime)
 			-- Shoot
 			if bestTarget then
 				struct.lastFired = currentTime
-				EnemyAI.damageEnemy(bestTarget, struct.stats.damage)
+				local targetPos = bestTarget.PrimaryPart and bestTarget.PrimaryPart.Position or bestTarget:GetPivot().Position
 				
-				local enemyPos = bestTarget.PrimaryPart and bestTarget.PrimaryPart.Position or bestTarget:GetPivot().Position
-				createLaser(structPos + Vector3.new(0, 5, 0), enemyPos) -- Shoot from slightly above base
+				if struct.stats.isAOE then
+					local splashRadius = struct.stats.aoeRadius or 12
+					-- Apply damage to all enemies in range of the target
+					for enemyModel, enemyData in pairs(activeEnemies) do
+						local enemyPos = enemyModel.PrimaryPart and enemyModel.PrimaryPart.Position or enemyModel:GetPivot().Position
+						if (enemyPos - targetPos).Magnitude <= splashRadius then
+							EnemyAI.damageEnemy(enemyModel, struct.stats.damage)
+						end
+					end
+					
+					-- Visual splash/laser visual
+					createLaser(structPos + Vector3.new(0, 5, 0), targetPos)
+					
+					-- Create visual blast ring for splash damage
+					local ring = Instance.new("Part")
+					ring.Name = "SplashEffect"
+					ring.Shape = Enum.PartType.Ball
+					ring.Size = Vector3.new(2, 2, 2)
+					ring.Position = targetPos
+					ring.Anchored = true
+					ring.CanCollide = false
+					ring.Transparency = 0.6
+					ring.Color = struct.name == "MageTower_Roblox" and Color3.fromRGB(150, 50, 250) or Color3.fromRGB(250, 150, 50)
+					ring.Material = Enum.Material.Neon
+					ring.Parent = Workspace
+					
+					-- Animate expansion and fade out
+					task.spawn(function()
+						local steps = 10
+						for i = 1, steps do
+							task.wait(0.02)
+							if ring and ring.Parent then
+								local scale = i / steps
+								ring.Size = Vector3.new(splashRadius * 2 * scale, splashRadius * 2 * scale, splashRadius * 2 * scale)
+								ring.Transparency = 0.6 + (0.4 * scale)
+							end
+						end
+						if ring and ring.Parent then
+							ring:Destroy()
+						end
+					end)
+				else
+					EnemyAI.damageEnemy(bestTarget, struct.stats.damage)
+					createLaser(structPos + Vector3.new(0, 5, 0), targetPos)
+				end
 			end
 		end
 	end

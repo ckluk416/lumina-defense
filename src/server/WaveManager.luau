@@ -5,8 +5,10 @@ local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
-local EnemyAI = require(script.Parent:WaitForChild("EnemyAI"))
-local PathPreview = require(script.Parent:WaitForChild("PathPreview"))
+local EnemyAI = require(script.Parent:WaitForChild("EnemyAI") :: ModuleScript)
+local PathPreview = require(script.Parent:WaitForChild("PathPreview") :: ModuleScript)
+local EnvironmentSetup = require(script.Parent:WaitForChild("EnvironmentSetup") :: ModuleScript)
+local LightingController = require(script.Parent:WaitForChild("LightingController") :: ModuleScript)
 local Assets = ReplicatedStorage:WaitForChild("Assets")
 
 local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
@@ -67,22 +69,9 @@ local function getActiveRoutes(waveIndex: number): {string}
 	return routes
 end
 
--- Get waypoints for a specific route
+-- Get waypoints for a specific route (delegates to EnvironmentSetup)
 local function getRouteWaypoints(routeId: string): {Vector3}
-	local waypoints: {Vector3} = {}
-	local routeFolder = Workspace:FindFirstChild("Route_" .. routeId)
-	if routeFolder then
-		local nodes = routeFolder:GetChildren()
-		table.sort(nodes, function(a, b)
-			return tonumber(a.Name) < tonumber(b.Name)
-		end)
-		for _, node in ipairs(nodes) do
-			if node:IsA("BasePart") then
-				table.insert(waypoints, node.Position)
-			end
-		end
-	end
-	return waypoints
+	return EnvironmentSetup.getRouteWaypoints(routeId)
 end
 
 -- Spawn a single enemy on a given route
@@ -95,22 +84,24 @@ function WaveManager.spawnEnemy(enemyName: string, routeId: string)
 	
 	local newEnemy = original:Clone() :: Model
 	
-	-- Position at spawn point
-	local spawnPoint = Workspace:FindFirstChild("SpawnPoint_" .. routeId)
-	if spawnPoint and spawnPoint:IsA("BasePart") then
-		newEnemy:PivotTo(CFrame.new(spawnPoint.Position + Vector3.new(0, 3, 0)))
+	-- Position at spawn point using EnvironmentSetup
+	local spawnPos = EnvironmentSetup.getSpawnPosition(routeId)
+	if spawnPos then
+		newEnemy:PivotTo(CFrame.new(spawnPos + Vector3.new(0, 3, 0)))
 	end
 	
 	newEnemy.Parent = Workspace
 	
-	-- Determine stealth
+	-- Determine stealth and reward
 	local isStealth = (enemyName == "StealthEnemy")
-	
-	-- Setup with HP, speed, damage
+
+	-- Stats per enemy type
 	local hp = if isStealth then 60 else 100
 	local speed = if isStealth then 20 else 16
 	local dmg = 10
-	EnemyAI.setupEnemy(newEnemy, hp, speed, dmg, isStealth)
+	local reward = if isStealth then 25 else 15
+
+	EnemyAI.setupEnemy(newEnemy, hp, speed, dmg, isStealth, reward)
 	
 	-- Get waypoints for this route and move
 	local waypoints = getRouteWaypoints(routeId)
@@ -151,6 +142,9 @@ function WaveManager.startWave()
 	print("[WaveManager] Wave " .. currentWave .. " started!")
 	UpdateWave:FireAllClients(currentWave, "Active")
 	
+	-- Shift to Night for combat
+	LightingController.setPhase("Night", 4)
+	
 	-- Show path preview for active routes
 	local activeRoutes = getActiveRoutes(currentWave)
 	PathPreview.showRoutes(activeRoutes)
@@ -189,6 +183,9 @@ function WaveManager.endWave()
 	status = "Intermission"
 	print("[WaveManager] Wave " .. currentWave .. " completed!")
 	UpdateWave:FireAllClients(currentWave, "Intermission")
+	
+	-- Shift to Day for preparation
+	LightingController.setPhase("Day", 2.5)
 	
 	-- Start next wave after intermission
 	task.spawn(function()

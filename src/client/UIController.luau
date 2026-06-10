@@ -9,6 +9,7 @@ local UpdateMoney = RemoteEvents:WaitForChild("UpdateMoney") :: RemoteEvent
 local UpdateWave = RemoteEvents:WaitForChild("UpdateWave") :: RemoteEvent
 local UpdateBaseHP = RemoteEvents:WaitForChild("UpdateBaseHP") :: RemoteEvent
 local RequestPlacement = RemoteEvents:WaitForChild("RequestPlacement") :: RemoteEvent
+local UpdateDayNight = RemoteEvents:WaitForChild("UpdateDayNight") :: RemoteEvent
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -96,6 +97,19 @@ moneyLabel.TextSize = 22
 moneyLabel.Font = Enum.Font.GothamBold
 moneyLabel.TextXAlignment = Enum.TextXAlignment.Right
 moneyLabel.Parent = topBar
+
+-- Day/Night Time Indicator (top-left, next to Wave)
+local timeIndicator = Instance.new("TextLabel")
+timeIndicator.Name = "TimeIndicator"
+timeIndicator.Size = UDim2.new(0, 180, 1, 0)
+timeIndicator.Position = UDim2.new(0, 185, 0, 0)
+timeIndicator.BackgroundTransparency = 1
+timeIndicator.Text = "☀️ Siang"
+timeIndicator.TextColor3 = Color3.fromRGB(255, 200, 50)
+timeIndicator.TextSize = 18
+timeIndicator.Font = Enum.Font.GothamBold
+timeIndicator.TextXAlignment = Enum.TextXAlignment.Left
+timeIndicator.Parent = topBar
 
 -- Status Label (below top bar)
 local statusLabel = Instance.new("TextLabel")
@@ -196,6 +210,16 @@ UpdateBaseHP.OnClientEvent:Connect(function(currentHP, maxHP)
 		hpFill.BackgroundColor3 = Color3.fromRGB(255, 200, 0)
 	else
 		hpFill.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+	end
+end)
+
+UpdateDayNight.OnClientEvent:Connect(function(phase: string)
+	if phase == "Day" then
+		timeIndicator.Text = "☀️ Siang (Prep)"
+		timeIndicator.TextColor3 = Color3.fromRGB(255, 200, 50)
+	else
+		timeIndicator.Text = "🌙 Malam (Combat!)"
+		timeIndicator.TextColor3 = Color3.fromRGB(150, 100, 255)
 	end
 end)
 
