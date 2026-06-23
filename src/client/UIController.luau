@@ -110,6 +110,32 @@ towerCountLabel.Font                  = Enum.Font.GothamMedium
 towerCountLabel.TextXAlignment        = Enum.TextXAlignment.Left
 towerCountLabel.Parent                = screenGui
 
+local removeModeBtn = Instance.new("TextButton")
+removeModeBtn.Name            = "RemoveModeBtn"
+removeModeBtn.Size            = UDim2.new(0, 130, 0, 36)
+removeModeBtn.Position        = UDim2.new(0, 15, 0, 90)
+removeModeBtn.BackgroundColor3= Color3.fromRGB(120, 30, 30)
+removeModeBtn.Text            = "🗑 Mode Hapus"
+removeModeBtn.TextColor3      = Color3.fromRGB(255, 255, 255)
+removeModeBtn.TextSize        = 14
+removeModeBtn.Font            = Enum.Font.GothamBold
+removeModeBtn.Parent          = screenGui
+Instance.new("UICorner", removeModeBtn).CornerRadius = UDim.new(0, 8)
+
+local removeModeActive = false
+removeModeBtn.MouseButton1Click:Connect(function()
+	removeModeActive = not removeModeActive
+	PlacementSystem.setRemoveModeEnabled(removeModeActive)
+	if removeModeActive then
+		removeModeBtn.Text = "❌ Batal Hapus"
+		removeModeBtn.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
+		statusLabel.Text = "🗑 Klik tower untuk menghapus (refund 50%)"
+	else
+		removeModeBtn.Text = "🗑 Mode Hapus"
+		removeModeBtn.BackgroundColor3 = Color3.fromRGB(120, 30, 30)
+	end
+end)
+
 local shopFrame = Instance.new("Frame")
 shopFrame.Size                  = UDim2.new(0, 520, 0, 80)
 shopFrame.Position              = UDim2.new(0.5, -260, 1, -95)
@@ -128,7 +154,7 @@ shopLayout.Parent                = shopFrame
 
 local TOWER_SHOP = {
 	{name = "ArcherTower_Roblox",  label = "Archer",  cost = 50,  color = Color3.fromRGB(180, 80, 60),  key = "B"},
-	{name = "CannonTower_Roblox",  label = "Cannon",  cost = 120, color = Color3.fromRGB(80, 80, 80),   key = "M"},
+	{name = "Mortar_Roblox",       label = "Mortar",  cost = 150, color = Color3.fromRGB(80, 80, 80),   key = "M"},
 	{name = "LightNode_Roblox",    label = "Light",   cost = 30,  color = Color3.fromRGB(255, 220, 60), key = "L"},
 	{name = "MageTower_Roblox",    label = "Mage",    cost = 80,  color = Color3.fromRGB(100, 60, 180), key = "N"},
 }

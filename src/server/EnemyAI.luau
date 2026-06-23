@@ -20,6 +20,7 @@ export type EnemyData = {
 	reward:     number,
 	hpBar:      Frame?,
 	connection: RBXScriptConnection?,
+	walkConnection: RBXScriptConnection?,
 	dying:      boolean,
 }
 
@@ -70,7 +71,7 @@ local function updateHPBar(data: EnemyData)
 	end
 end
 
-local WALK_ANIM_ID    = "rbxassetid://180426354" -- official R6 walk animation
+local WALK_ANIM_ID    = "rbxassetid://180426354" -- official R6 walk animation (kept for reference, no longer used -- see startProceduralWalk below)
 local DIE_ANIM_ID     = nil :: string? -- no animation; death uses a programmatic ragdoll-fall instead (see playDeathEffect)
 
 -- R6 rig models built from individual unwelded parts (like our enemy models)
@@ -142,6 +143,54 @@ local function ensureR6Motors(enemyModel: Model)
 	end
 end
 
+-- PROCEDURAL WALK: the official R6 walk animation (180426354), when played
+-- through our motors, rotates Left/Right Shoulder & Hip dominantly around
+-- the Z-axis (side-to-side ab/adduction) instead of the X-axis (front-back
+-- swing) -- verified live by sampling Motor.Transform:ToEulerAnglesXYZ()
+-- during playback, which showed Z components up to ~70 deg vs near-zero X.
+-- That's why limbs visibly swing sideways ("tangan kanan, kaki kiri")
+-- instead of a normal forward gait. Rather than depend on that animation
+-- asset's compatibility with this custom rig, we drive the 4 limb motors
+-- directly every frame with a simple contralateral sine-wave gait, rotating
+-- ONLY around local X (guaranteed correct front-back swing).
+local WALK_SWING_AMPLITUDE_ARM = math.rad(35)
+local WALK_SWING_AMPLITUDE_LEG = math.rad(25)
+local WALK_CYCLE_SPEED         = 6 -- radians per stud moved, roughly matches a natural stride rate
+
+local function startProceduralWalk(enemyModel: Model, humanoid: Humanoid): RBXScriptConnection?
+	local torso = enemyModel:FindFirstChild("Torso")
+	if not torso then return nil end
+
+	local leftShoulder  = torso:FindFirstChild("Left Shoulder")  :: Motor6D?
+	local rightShoulder = torso:FindFirstChild("Right Shoulder") :: Motor6D?
+	local leftHip        = torso:FindFirstChild("Left Hip")  :: Motor6D?
+	local rightHip       = torso:FindFirstChild("Right Hip") :: Motor6D?
+	if not (leftShoulder and rightShoulder and leftHip and rightHip) then return nil end
+
+	local phase = 0
+	return RunService.Heartbeat:Connect(function(dt: number)
+		if not enemyModel.Parent then return end
+		local moveSpeed = humanoid.MoveDirection.Magnitude > 0.05 and humanoid.WalkSpeed or 0
+
+		if moveSpeed > 0 then
+			phase += dt * WALK_CYCLE_SPEED * (moveSpeed / 16)
+			local swing = math.sin(phase)
+
+			leftShoulder.Transform  = CFrame.Angles(swing * WALK_SWING_AMPLITUDE_ARM, 0, 0)
+			rightShoulder.Transform = CFrame.Angles(-swing * WALK_SWING_AMPLITUDE_ARM, 0, 0)
+			-- contralateral gait: left leg swings opposite to left arm
+			leftHip.Transform  = CFrame.Angles(-swing * WALK_SWING_AMPLITUDE_LEG, 0, 0)
+			rightHip.Transform = CFrame.Angles(swing * WALK_SWING_AMPLITUDE_LEG, 0, 0)
+		else
+			-- ease back to neutral standing pose when not moving
+			leftShoulder.Transform  = leftShoulder.Transform:Lerp(CFrame.new(), 0.2)
+			rightShoulder.Transform = rightShoulder.Transform:Lerp(CFrame.new(), 0.2)
+			leftHip.Transform        = leftHip.Transform:Lerp(CFrame.new(), 0.2)
+			rightHip.Transform       = rightHip.Transform:Lerp(CFrame.new(), 0.2)
+		end
+	end)
+end
+
 local function playAnimation(enemyModel: Model, animId: string, looped: boolean): AnimationTrack?
 	local humanoid = enemyModel:FindFirstChildOfClass("Humanoid")
 	if not humanoid then return nil end
@@ -189,6 +238,14 @@ local function playDeathEffect(enemyModel: Model, callback: () -> ())
 		for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
 			track:Stop(0.1)
 		end
+	end
+
+	-- Stop the procedural walk loop so the legs/arms freeze in place instead
+	-- of continuing to cycle while the body falls over.
+	local data = activeEnemies[enemyModel]
+	if data and data.walkConnection then
+		data.walkConnection:Disconnect()
+		data.walkConnection = nil
 	end
 
 	local FALL_DURATION = 0.4
@@ -272,6 +329,7 @@ end
 function EnemyAI.cleanupEnemy(enemyModel: Model)
 	local data = activeEnemies[enemyModel]
 	if data and data.connection then data.connection:Disconnect() end
+	if data and data.walkConnection then data.walkConnection:Disconnect() end
 	activeEnemies[enemyModel] = nil
 	if enemyModel and enemyModel.Parent then enemyModel:Destroy() end
 end
@@ -288,7 +346,7 @@ function EnemyAI.setupEnemy(
 	local rewardValue  = if reward ~= nil then reward else 15
 
 	-- Fix the rig BEFORE creating the HP bar / setting up data, so the
-	-- Motor6Ds exist by the time the walk animation is loaded below.
+	-- Motor6Ds exist by the time the procedural walk loop attaches below.
 	ensureR6Motors(enemyModel)
 
 	local hpBarFill = createHPBar(enemyModel)
@@ -310,11 +368,12 @@ function EnemyAI.setupEnemy(
 		humanoid.WalkSpeed = speed
 		humanoid.MaxHealth = maxHealth
 		humanoid.Health    = maxHealth
-	end
 
-	task.spawn(function()
-		playAnimation(enemyModel, WALK_ANIM_ID, true)
-	end)
+		local walkConn = startProceduralWalk(enemyModel, humanoid)
+		if walkConn then
+			(activeEnemies[enemyModel] :: EnemyData).walkConnection = walkConn
+		end
+	end
 end
 
 function EnemyAI.moveAlongWaypoints(enemyModel: Model, waypoints: {Vector3})

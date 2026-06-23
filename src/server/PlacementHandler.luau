@@ -6,6 +6,7 @@ local Workspace = game:GetService("Workspace")
 
 local RemoteEvents     = ReplicatedStorage:WaitForChild("RemoteEvents")
 local RequestPlacement = RemoteEvents:WaitForChild("RequestPlacement") :: RemoteEvent
+local RequestRemoveTower = RemoteEvents:WaitForChild("RequestRemoveTower") :: RemoteEvent
 local Assets           = ReplicatedStorage:WaitForChild("Assets")
 
 local EconomyManager = require(script.Parent:WaitForChild("EconomyManager") :: ModuleScript)
@@ -15,28 +16,31 @@ local ALLOWED_TOWERS = {
 	["ArcherTower_Roblox"]  = {cost = 50},
 	["LightNode_Roblox"]    = {cost = 30},
 	["MageTower_Roblox"]    = {cost = 80},
-	["CannonTower_Roblox"]  = {cost = 120},
+	["Mortar_Roblox"]       = {cost = 150},
 }
 
 local MAX_TOWERS_PER_PLAYER = 12
 local MINIMUM_DISTANCE = 14
+local REFUND_RATIO = 0.5
 
-local placedPositions: {[number]: {Vector3}} = {}
-local towerCount:      {[number]: number}    = {}
+type PlacedEntry = {model: Model, position: Vector3, towerName: string}
+
+local placedTowers: {[number]: {PlacedEntry}} = {}
+local towerOwner:   {[Model]: Player}          = {}
+
+local function getPlayerTowerCount(player: Player): number
+	return placedTowers[player.UserId] and #placedTowers[player.UserId] or 0
+end
 
 local function isTooCloseToAny(position: Vector3): boolean
-	for _, positions in pairs(placedPositions) do
-		for _, existingPos in ipairs(positions) do
-			if (existingPos - Vector3.new(position.X, existingPos.Y, position.Z)).Magnitude < MINIMUM_DISTANCE then
+	for _, entries in pairs(placedTowers) do
+		for _, entry in ipairs(entries) do
+			if (entry.position - Vector3.new(position.X, entry.position.Y, position.Z)).Magnitude < MINIMUM_DISTANCE then
 				return true
 			end
 		end
 	end
 	return false
-end
-
-local function getPlayerTowerCount(player: Player): number
-	return towerCount[player.UserId] or 0
 end
 
 local function placeModel(original: Model, position: Vector3): Model
@@ -104,16 +108,56 @@ RequestPlacement.OnServerEvent:Connect(function(player: Player, towerName, posit
 	CombatManager.registerStructure(newTower, towerName)
 
 	local uid = player.UserId
-	if not placedPositions[uid] then placedPositions[uid] = {} end
-	table.insert(placedPositions[uid], position)
-	towerCount[uid] = (towerCount[uid] or 0) + 1
+	if not placedTowers[uid] then placedTowers[uid] = {} end
+	table.insert(placedTowers[uid], {model = newTower, position = position, towerName = towerName})
+	towerOwner[newTower] = player
 
 	local UpdateMoney      = RemoteEvents:FindFirstChild("UpdateMoney")      :: RemoteEvent
 	local UpdateTowerCount = RemoteEvents:FindFirstChild("UpdateTowerCount") :: RemoteEvent
 	if UpdateMoney      then UpdateMoney:FireClient(player, EconomyManager.getMoney(player)) end
-	if UpdateTowerCount then UpdateTowerCount:FireClient(player, towerCount[uid], MAX_TOWERS_PER_PLAYER) end
+	if UpdateTowerCount then UpdateTowerCount:FireClient(player, getPlayerTowerCount(player), MAX_TOWERS_PER_PLAYER) end
 
-	print(player.Name .. " placed " .. towerName .. " (" .. towerCount[uid] .. "/" .. MAX_TOWERS_PER_PLAYER .. ")")
+	print(player.Name .. " placed " .. towerName .. " (" .. getPlayerTowerCount(player) .. "/" .. MAX_TOWERS_PER_PLAYER .. ")")
+end)
+
+RequestRemoveTower.OnServerEvent:Connect(function(player: Player, model)
+	if typeof(model) ~= "Instance" or not model:IsA("Model") then return end
+
+	if towerOwner[model] ~= player then
+		warn(player.Name .. " tried to remove a tower they don't own")
+		return
+	end
+
+	local uid = player.UserId
+	local entries = placedTowers[uid]
+	if not entries then return end
+
+	local removedEntry: PlacedEntry? = nil
+	for i, entry in ipairs(entries) do
+		if entry.model == model then
+			removedEntry = entry
+			table.remove(entries, i)
+			break
+		end
+	end
+	if not removedEntry then return end
+
+	towerOwner[model] = nil
+	CombatManager.removeStructure(model)
+	model:Destroy()
+
+	local towerInfo = ALLOWED_TOWERS[removedEntry.towerName]
+	if towerInfo then
+		local refund = math.floor(towerInfo.cost * REFUND_RATIO)
+		EconomyManager.addMoney(player, refund)
+	end
+
+	local UpdateMoney      = RemoteEvents:FindFirstChild("UpdateMoney")      :: RemoteEvent
+	local UpdateTowerCount = RemoteEvents:FindFirstChild("UpdateTowerCount") :: RemoteEvent
+	if UpdateMoney      then UpdateMoney:FireClient(player, EconomyManager.getMoney(player)) end
+	if UpdateTowerCount then UpdateTowerCount:FireClient(player, getPlayerTowerCount(player), MAX_TOWERS_PER_PLAYER) end
+
+	print(player.Name .. " removed " .. removedEntry.towerName .. " (" .. getPlayerTowerCount(player) .. "/" .. MAX_TOWERS_PER_PLAYER .. ")")
 end)
 
 function PlacementHandler.getMaxTowers(): number

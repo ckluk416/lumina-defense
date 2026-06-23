@@ -9,6 +9,7 @@ local RunService       = game:GetService("RunService")
 
 local RemoteEvents     = ReplicatedStorage:WaitForChild("RemoteEvents")
 local RequestPlacement = RemoteEvents:WaitForChild("RequestPlacement") :: RemoteEvent
+local RequestRemoveTower = RemoteEvents:WaitForChild("RequestRemoveTower") :: RemoteEvent
 local Assets           = ReplicatedStorage:WaitForChild("Assets")
 
 local player = Players.LocalPlayer
@@ -17,21 +18,53 @@ local mouse  = player:GetMouse()
 local TOWER_RANGES: {[string]: number} = {
 	["ArcherTower_Roblox"]  = 35,
 	["MageTower_Roblox"]    = 30,
-	["CannonTower_Roblox"]  = 25,
+	["Mortar_Roblox"]       = 50,
 	["LightNode_Roblox"]    = 15,
 }
 
-local currentPreview:  Model?  = nil
-local rangeIndicator:  Part?   = nil
+local currentPreview:    Model? = nil
+local rangeIndicator:    Part?  = nil
+local innerRangeIndicator: Part? = nil
+
+local TOWER_INNER_RANGES: {[string]: number} = {
+	["Mortar_Roblox"] = 8,
+}
 local isPlacing        = false
 local currentTowerName = ""
 local placingEnabled   = true
+local removeModeEnabled = false
+
+local removeHighlight: Highlight? = nil
+local hoveredTowerModel: Model? = nil
 
 local function clearRangeIndicator()
 	if rangeIndicator then
 		rangeIndicator:Destroy()
 		rangeIndicator = nil
 	end
+	if innerRangeIndicator then
+		innerRangeIndicator:Destroy()
+		innerRangeIndicator = nil
+	end
+end
+
+local function updateInnerRangeIndicator(position: Vector3, innerRange: number)
+	if not innerRangeIndicator then
+		innerRangeIndicator = Instance.new("Part")
+		innerRangeIndicator.Name        = "InnerRangeIndicator"
+		innerRangeIndicator.Shape       = Enum.PartType.Cylinder
+		innerRangeIndicator.Anchored    = true
+		innerRangeIndicator.CanCollide  = false
+		innerRangeIndicator.CanQuery    = false
+		innerRangeIndicator.CastShadow  = false
+		innerRangeIndicator.Material    = Enum.Material.Neon
+		innerRangeIndicator.Color       = Color3.fromRGB(255, 80, 80)
+		innerRangeIndicator.Transparency = 0.55
+		innerRangeIndicator.Parent      = Workspace
+	end
+	local diameter = innerRange * 2
+	innerRangeIndicator.Size  = Vector3.new(0.16, diameter, diameter)
+	innerRangeIndicator.CFrame = CFrame.new(position) * CFrame.Angles(0, 0, math.rad(90))
 end
 
 local function updateRangeIndicator(position: Vector3, range: number)
@@ -111,6 +144,21 @@ function PlacementSystem.setPlacingEnabled(enabled: boolean)
 	end
 end
 
+function PlacementSystem.setRemoveModeEnabled(enabled: boolean)
+	removeModeEnabled = enabled
+	if enabled then
+		PlacementSystem.cancelPlacement()
+	else
+		if removeHighlight then removeHighlight:Destroy(); removeHighlight = nil end
+		hoveredTowerModel = nil
+	end
+end
+
+local OWNED_TOWER_NAMES = {
+	["ArcherTower_Roblox"] = true, ["MageTower_Roblox"] = true,
+	["LightNode_Roblox"]   = true, ["Mortar_Roblox"]    = true,
+}
+
 function PlacementSystem.cancelPlacement()
 	isPlacing = false
 	currentTowerName = ""
@@ -152,6 +200,26 @@ end
 -- under a Folder with no raycast target (or just making it
 -- CanQuery = false) keeps the mouse raycast hitting only real terrain/parts.
 RunService.RenderStepped:Connect(function()
+	if removeModeEnabled then
+		local target = mouse.Target
+		local model = target and target:FindFirstAncestorOfClass("Model")
+		if model and OWNED_TOWER_NAMES[model.Name] then
+			if hoveredTowerModel ~= model then
+				hoveredTowerModel = model
+				if removeHighlight then removeHighlight:Destroy() end
+				removeHighlight = Instance.new("Highlight")
+				removeHighlight.FillColor = Color3.fromRGB(255, 60, 60)
+				removeHighlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+				removeHighlight.FillTransparency = 0.5
+				removeHighlight.Parent = model
+			end
+		else
+			hoveredTowerModel = nil
+			if removeHighlight then removeHighlight:Destroy(); removeHighlight = nil end
+		end
+		return
+	end
+
 	if not (isPlacing and currentPreview) then
 		clearRangeIndicator()
 		return
@@ -171,21 +239,41 @@ RunService.RenderStepped:Connect(function()
 	else
 		clearRangeIndicator()
 	end
+
+	local innerRange = TOWER_INNER_RANGES[currentTowerName]
+	if innerRange then
+		updateInnerRangeIndicator(Vector3.new(snapped.X, snapped.Y + 0.18, snapped.Z), innerRange)
+	elseif innerRangeIndicator then
+		innerRangeIndicator:Destroy()
+		innerRangeIndicator = nil
+	end
 end)
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then return end
 
+	if input.UserInputType == Enum.UserInputType.MouseButton1 and removeModeEnabled and hoveredTowerModel then
+		RequestRemoveTower:FireServer(hoveredTowerModel)
+		hoveredTowerModel = nil
+		if removeHighlight then removeHighlight:Destroy(); removeHighlight = nil end
+		return
+	end
+
 	if not isPlacing then
 		if input.KeyCode == Enum.KeyCode.B then PlacementSystem.startPlacement("ArcherTower_Roblox")
 		elseif input.KeyCode == Enum.KeyCode.N then PlacementSystem.startPlacement("MageTower_Roblox")
-		elseif input.KeyCode == Enum.KeyCode.M then PlacementSystem.startPlacement("CannonTower_Roblox")
+		elseif input.KeyCode == Enum.KeyCode.M then PlacementSystem.startPlacement("Mortar_Roblox")
 		elseif input.KeyCode == Enum.KeyCode.L then PlacementSystem.startPlacement("LightNode_Roblox")
 		end
 	end
 
 	if input.KeyCode == Enum.KeyCode.Escape and isPlacing then
 		PlacementSystem.cancelPlacement()
+	end
+
+	if input.UserInputType == Enum.UserInputType.MouseButton2 and isPlacing then
+		PlacementSystem.cancelPlacement()
+		return
 	end
 
 	if input.UserInputType == Enum.UserInputType.MouseButton1 and isPlacing and currentPreview then

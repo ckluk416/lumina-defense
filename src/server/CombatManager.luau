@@ -18,13 +18,9 @@ local TOWER_STATS = {
 		isLightNode = false, isAOE = true,
 		aoeRadius = 12, damage = 25, range = 30, fireRate = 1.5,
 	},
-	["CannonTower_Roblox"] = {
-		isLightNode = false, isAOE = true,
-		aoeRadius = 16, damage = 40, range = 25, fireRate = 2.5,
-	},
 	["Mortar_Roblox"] = {
 		isLightNode = false, isAOE = true,
-		aoeRadius = 14, damage = 45, range = 50, innerRange = 20, fireRate = 3.0,
+		aoeRadius = 14, damage = 45, range = 50, innerRange = 8, fireRate = 3.0,
 	},
 	["LightNode_Roblox"] = {
 		isLightNode = true, range = 25,
@@ -191,7 +187,7 @@ local function fireCannonShell(origin: Vector3, target: Vector3, splashRadius: n
 	end)
 end
 
-local function fireMortarMissile(origin: Vector3, target: Vector3, splashRadius: number)
+local function fireMortarMissile(origin: Vector3, target: Vector3, splashRadius: number, onImpact: ((Vector3) -> ())?)
 	local missile = Instance.new("Part")
 	missile.Name       = "MortarMissile"
 	missile.Shape      = Enum.PartType.Cylinder
@@ -233,6 +229,10 @@ local function fireMortarMissile(origin: Vector3, target: Vector3, splashRadius:
 		end
 		missile:Destroy()
 		fin:Destroy()
+
+		if onImpact then
+			onImpact(target)
+		end
 
 		local boom = Instance.new("Part")
 		boom.Shape       = Enum.PartType.Ball
@@ -298,6 +298,16 @@ function CombatManager.registerStructure(model: Model, name: string)
 	print("Registered " .. name .. " to CombatManager")
 end
 
+function CombatManager.removeStructure(model: Model)
+	for i, struct in ipairs(activeStructures) do
+		if struct.model == model then
+			table.remove(activeStructures, i)
+			return true
+		end
+	end
+	return false
+end
+
 RunService.Heartbeat:Connect(function()
 	local now         = tick()
 	local activeEnemies = EnemyAI.getActiveEnemies()
@@ -356,30 +366,19 @@ RunService.Heartbeat:Connect(function()
 				end
 			end
 
-		elseif struct.name == "CannonTower_Roblox" then
-			local sr = struct.stats.aoeRadius or 16
-			rotateTurretToward(struct.model, targetPos)
-			fireCannonShell(origin, targetPos, sr)
-			for enemyModel in pairs(activeEnemies) do
-				local ePos = enemyModel.PrimaryPart
-					and enemyModel.PrimaryPart.Position
-					or enemyModel:GetPivot().Position
-				if (ePos - targetPos).Magnitude <= sr then
-					EnemyAI.damageEnemy(enemyModel, struct.stats.damage)
-				end
-			end
-
 		elseif struct.name == "Mortar_Roblox" then
 			local sr = struct.stats.aoeRadius or 14
-			fireMortarMissile(origin, targetPos, sr)
-			for enemyModel in pairs(activeEnemies) do
-				local ePos = enemyModel.PrimaryPart
-					and enemyModel.PrimaryPart.Position
-					or enemyModel:GetPivot().Position
-				if (ePos - targetPos).Magnitude <= sr then
-					EnemyAI.damageEnemy(enemyModel, struct.stats.damage)
+			fireMortarMissile(origin, targetPos, sr, function(impactPos: Vector3)
+				local liveEnemies = EnemyAI.getActiveEnemies()
+				for enemyModel in pairs(liveEnemies) do
+					local ePos = enemyModel.PrimaryPart
+						and enemyModel.PrimaryPart.Position
+						or enemyModel:GetPivot().Position
+					if (ePos - impactPos).Magnitude <= sr then
+						EnemyAI.damageEnemy(enemyModel, struct.stats.damage)
+					end
 				end
-			end
+			end)
 		end
 	end
 end)
