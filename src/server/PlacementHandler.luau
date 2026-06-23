@@ -4,89 +4,120 @@ local PlacementHandler = {}
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
-local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
+local RemoteEvents     = ReplicatedStorage:WaitForChild("RemoteEvents")
 local RequestPlacement = RemoteEvents:WaitForChild("RequestPlacement") :: RemoteEvent
-local Assets = ReplicatedStorage:WaitForChild("Assets")
+local Assets           = ReplicatedStorage:WaitForChild("Assets")
 
 local EconomyManager = require(script.Parent:WaitForChild("EconomyManager") :: ModuleScript)
-local CombatManager = require(script.Parent:WaitForChild("CombatManager") :: ModuleScript)
+local CombatManager  = require(script.Parent:WaitForChild("CombatManager")  :: ModuleScript)
 
--- List of allowed tower names
 local ALLOWED_TOWERS = {
-	["ArcherTower_Roblox"] = {cost = 50},
-	["LightNode_Roblox"] = {cost = 30},
-	["MageTower_Roblox"] = {cost = 80},
-	["CannonTower_Roblox"] = {cost = 120},
+	["ArcherTower_Roblox"]  = {cost = 50},
+	["LightNode_Roblox"]    = {cost = 30},
+	["MageTower_Roblox"]    = {cost = 80},
+	["CannonTower_Roblox"]  = {cost = 120},
 }
 
--- Track placed towers for collision checking
-local placedTowers: {Vector3} = {}
-local MINIMUM_DISTANCE = 8 -- Minimum studs between towers
+local MAX_TOWERS_PER_PLAYER = 12
+local MINIMUM_DISTANCE = 14
 
--- Check if a position is too close to any existing tower
-local function isTooCloseToExisting(position: Vector3): boolean
-	for _, existingPos in ipairs(placedTowers) do
-		if (existingPos - position).Magnitude < MINIMUM_DISTANCE then
-			return true
+local placedPositions: {[number]: {Vector3}} = {}
+local towerCount:      {[number]: number}    = {}
+
+local function isTooCloseToAny(position: Vector3): boolean
+	for _, positions in pairs(placedPositions) do
+		for _, existingPos in ipairs(positions) do
+			if (existingPos - Vector3.new(position.X, existingPos.Y, position.Z)).Magnitude < MINIMUM_DISTANCE then
+				return true
+			end
 		end
 	end
 	return false
 end
 
-RequestPlacement.OnServerEvent:Connect(function(player, towerName, position)
-	-- 1. Validate inputs
+local function getPlayerTowerCount(player: Player): number
+	return towerCount[player.UserId] or 0
+end
+
+local function placeModel(original: Model, position: Vector3): Model
+	local newModel = original:Clone() :: Model
+
+	local sumX, sumY, sumZ, partCount = 0, 0, 0, 0
+	for _, p in ipairs(newModel:GetDescendants()) do
+		if p:IsA("BasePart") then
+			sumX += p.Position.X; sumY += p.Position.Y
+			sumZ += p.Position.Z; partCount += 1
+		end
+	end
+	local center = Vector3.new(sumX / partCount, sumY / partCount, sumZ / partCount)
+
+	local lowestY = math.huge
+	for _, p in ipairs(newModel:GetDescendants()) do
+		if p:IsA("BasePart") then
+			lowestY = math.min(lowestY, p.Position.Y - p.Size.Y / 2)
+		end
+	end
+
+	newModel:TranslateBy(Vector3.new(
+		position.X - center.X,
+		position.Y - lowestY,
+		position.Z - center.Z
+	))
+
+	for _, p in ipairs(newModel:GetDescendants()) do
+		if p:IsA("BasePart") then p.Anchored = true end
+	end
+
+	newModel.Parent = Workspace
+	return newModel
+end
+
+RequestPlacement.OnServerEvent:Connect(function(player: Player, towerName, position)
 	if typeof(towerName) ~= "string" or typeof(position) ~= "Vector3" then return end
-	
-	-- 2. Validate tower exists in our allowed list
+
 	local towerInfo = ALLOWED_TOWERS[towerName]
 	if not towerInfo then return end
-	
-	-- 3. Collision check
-	if isTooCloseToExisting(position) then
-		warn(player.Name .. " tried to place " .. towerName .. " too close to another tower!")
+
+	if getPlayerTowerCount(player) >= MAX_TOWERS_PER_PLAYER then
+		warn(player.Name .. " exceeded tower limit (" .. MAX_TOWERS_PER_PLAYER .. ")")
 		return
 	end
-	
-	-- 4. Check Economy
-	if EconomyManager.deductMoney(player, towerInfo.cost) then
-		-- 5. Clone and place tower
-		local original = Assets:FindFirstChild(towerName)
-		if original and original:IsA("Model") then
-			local newTower = original:Clone() :: Model
-			
-			-- Preserve the original rotation of the model
-			local originalRotation = original:GetPivot().Rotation
-			newTower:PivotTo(CFrame.new(position) * originalRotation)
-			
-			-- Anchor all parts
-			for _, part in ipairs(newTower:GetDescendants()) do
-				if part:IsA("BasePart") then
-					part.Anchored = true
-				end
-			end
-			
-			newTower.Parent = Workspace
-			
-			-- Record position for collision checking
-			table.insert(placedTowers, position)
-			
-			-- Register to CombatManager
-			CombatManager.registerStructure(newTower, towerName)
-			
-			-- Notify client of money change
-			local UpdateMoney = RemoteEvents:FindFirstChild("UpdateMoney") :: RemoteEvent
-			if UpdateMoney then
-				UpdateMoney:FireClient(player, EconomyManager.getMoney(player))
-			end
-			
-			print(player.Name .. " placed " .. towerName .. " at " .. tostring(position))
-		else
-			EconomyManager.addMoney(player, towerInfo.cost)
-			warn("Failed to find tower model in Assets: " .. towerName)
-		end
-	else
-		warn(player.Name .. " tried to place " .. towerName .. " without enough money!")
+
+	if isTooCloseToAny(position) then
+		warn(player.Name .. " tried to place " .. towerName .. " too close to another structure!")
+		return
 	end
+
+	if not EconomyManager.deductMoney(player, towerInfo.cost) then
+		warn(player.Name .. " can't afford " .. towerName)
+		return
+	end
+
+	local original = Assets:FindFirstChild(towerName)
+	if not original or not original:IsA("Model") then
+		EconomyManager.addMoney(player, towerInfo.cost)
+		warn("Failed to find tower model in Assets: " .. towerName)
+		return
+	end
+
+	local newTower = placeModel(original, position)
+	CombatManager.registerStructure(newTower, towerName)
+
+	local uid = player.UserId
+	if not placedPositions[uid] then placedPositions[uid] = {} end
+	table.insert(placedPositions[uid], position)
+	towerCount[uid] = (towerCount[uid] or 0) + 1
+
+	local UpdateMoney      = RemoteEvents:FindFirstChild("UpdateMoney")      :: RemoteEvent
+	local UpdateTowerCount = RemoteEvents:FindFirstChild("UpdateTowerCount") :: RemoteEvent
+	if UpdateMoney      then UpdateMoney:FireClient(player, EconomyManager.getMoney(player)) end
+	if UpdateTowerCount then UpdateTowerCount:FireClient(player, towerCount[uid], MAX_TOWERS_PER_PLAYER) end
+
+	print(player.Name .. " placed " .. towerName .. " (" .. towerCount[uid] .. "/" .. MAX_TOWERS_PER_PLAYER .. ")")
 end)
+
+function PlacementHandler.getMaxTowers(): number
+	return MAX_TOWERS_PER_PLAYER
+end
 
 return PlacementHandler

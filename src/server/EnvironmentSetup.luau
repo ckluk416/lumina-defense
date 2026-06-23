@@ -1,33 +1,34 @@
 --!strict
 -- EnvironmentSetup: Map Configuration Module
 --
--- IMPORTANT: This module NO LONGER generates map objects.
--- All map objects must be placed MANUALLY in Roblox Studio:
+-- Reads map objects from Workspace and exposes them to WaveManager/EnemyAI.
+-- As of the procedural map update, the actual map objects (SpawnPoints,
+-- Route_<id> folders, Portals) are created at runtime by MapGenerator on
+-- every match restart, instead of being placed manually in Studio:
 --
 --   Workspace/
---     Base                      (Part, anchored, any size — the main objective)
---     SpawnPoint_A              (Part, anchored — where Route A enemies spawn)
---     SpawnPoint_B              (Part, anchored — where Route B enemies spawn)
---     SpawnPoint_C              (Part, anchored — where Route C enemies spawn)
---     Route_A/  (Folder)
---       1  (Part, anchored) — first waypoint
---       2  (Part, anchored)
---       ...                    — last waypoint should overlap Base position
---     Route_B/  (Folder)
---       1, 2, 3...
---     Route_C/  (Folder)
---       1, 2, 3...
+--     Base                       (Model -- placed once, stays fixed at origin)
+--     SpawnPoint_<id>             (Part)              -- one per generated route
+--     Route_<id>/  (Folder)
+--       1, 2, 3...    (Part waypoints) -- last one overlaps Base position
+--     Portal_SpawnPoint_<id>      (Model)
 --
--- Use the Terrain editor (top toolbar > Terrain) to paint Grass terrain.
--- Make sure all SpawnPoints and Waypoint parts are invisible (Transparency=1)
--- or small so they don't block gameplay.
+-- Call order: MapGenerator.generate() -> EnvironmentSetup.setRouteIds(...)
+-- with the returned route IDs -> EnvironmentSetup.init() to verify.
+-- See Server (init script) for the exact call order.
 
 local EnvironmentSetup = {}
 
 local Workspace = game:GetService("Workspace")
 
--- Route IDs used by WaveManager. Add more if you add more routes.
-local ROUTE_IDS = {"A", "B", "C"}
+-- Route IDs are now determined dynamically by MapGenerator at the start of
+-- each match (2-4 random routes), instead of a fixed {"A","B","C"} list.
+-- This is set via EnvironmentSetup.setRouteIds() right after generation.
+local ROUTE_IDS: {string} = {}
+
+function EnvironmentSetup.setRouteIds(routeIds: {string})
+	ROUTE_IDS = routeIds
+end
 
 function EnvironmentSetup.getRouteIds(): {string}
 	return ROUTE_IDS
@@ -69,8 +70,16 @@ end
 -- Returns Base position.
 function EnvironmentSetup.getBasePosition(): Vector3
 	local base = Workspace:FindFirstChild("Base")
-	if base and base:IsA("BasePart") then
-		return base.Position
+	if base then
+		if base:IsA("BasePart") then
+			return base.Position
+		elseif base:IsA("Model") then
+			if base.PrimaryPart then
+				return base.PrimaryPart.Position
+			else
+				return base:GetPivot().Position
+			end
+		end
 	end
 	return Vector3.new(0, 0, 0)
 end
@@ -80,7 +89,7 @@ function EnvironmentSetup.init()
 	-- Verify map objects exist
 	local ok = true
 	if not Workspace:FindFirstChild("Base") then
-		warn("[EnvironmentSetup] ⚠ 'Base' Part not found in Workspace. Place it manually!")
+		warn("[EnvironmentSetup] ⚠ 'Base' not found in Workspace. Place it manually!")
 		ok = false
 	end
 	for _, id in ipairs(ROUTE_IDS) do
@@ -100,6 +109,8 @@ function EnvironmentSetup.init()
 	end
 end
 
-EnvironmentSetup.init()
+-- NOTE: EnvironmentSetup.init() is intentionally NOT auto-called here.
+-- It must run after MapGenerator.generate() + EnvironmentSetup.setRouteIds(),
+-- which Server (init script) orchestrates in the correct order.
 
 return EnvironmentSetup

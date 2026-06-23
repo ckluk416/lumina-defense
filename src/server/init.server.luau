@@ -1,8 +1,16 @@
 --!strict
 print("[Server] Initializing...")
 
--- Environment first (generates map: ground, base, 3 spawn points, 3 routes)
-require(script:WaitForChild("EnvironmentSetup") :: ModuleScript)
+-- Procedural map generation: builds a fresh layout (2-4 random routes from
+-- portals to Base) for this match. Must run BEFORE EnvironmentSetup.init()
+-- and BEFORE WaveManager starts, since both depend on the generated
+-- SpawnPoint_<id> / Route_<id> / Portal objects existing in Workspace.
+local MapGenerator = require(script:WaitForChild("MapGenerator") :: ModuleScript)
+local EnvironmentSetup = require(script:WaitForChild("EnvironmentSetup") :: ModuleScript)
+
+local generatedRouteIds = MapGenerator.generate()
+EnvironmentSetup.setRouteIds(generatedRouteIds)
+EnvironmentSetup.init()
 
 -- Core systems (order matters: CombatManager before PlacementHandler)
 local EconomyManager = require(script:WaitForChild("EconomyManager") :: ModuleScript)
@@ -10,7 +18,13 @@ require(script:WaitForChild("CombatManager") :: ModuleScript)
 require(script:WaitForChild("PlacementHandler") :: ModuleScript)
 require(script:WaitForChild("LightingController") :: ModuleScript)
 require(script:WaitForChild("PathPreview") :: ModuleScript)
-require(script:WaitForChild("WaveManager") :: ModuleScript)
+local WaveManager = require(script:WaitForChild("WaveManager") :: ModuleScript)
+require(script:WaitForChild("VisualEffects") :: ModuleScript)
+
+-- Start the match: resets wave/base state, then kicks off Wave 1 after the
+-- initial preview buffer.
+WaveManager.resetForNewMatch()
+WaveManager.beginMatch()
 
 -- Send initial money to each player when they join
 local Players = game:GetService("Players")
@@ -26,4 +40,3 @@ Players.PlayerAdded:Connect(function(player)
 end)
 
 print("[Server] Initialization Complete.")
-
