@@ -159,7 +159,8 @@ local WALK_CYCLE_SPEED         = 6 -- radians per stud moved, roughly matches a 
 
 local function startProceduralWalk(enemyModel: Model, humanoid: Humanoid): RBXScriptConnection?
 	local torso = enemyModel:FindFirstChild("Torso")
-	if not torso then return nil end
+	local rootPart = enemyModel:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if not torso or not rootPart then return nil end
 
 	local leftShoulder  = torso:FindFirstChild("Left Shoulder")  :: Motor6D?
 	local rightShoulder = torso:FindFirstChild("Right Shoulder") :: Motor6D?
@@ -167,10 +168,21 @@ local function startProceduralWalk(enemyModel: Model, humanoid: Humanoid): RBXSc
 	local rightHip       = torso:FindFirstChild("Right Hip") :: Motor6D?
 	if not (leftShoulder and rightShoulder and leftHip and rightHip) then return nil end
 
+	-- NOTE: Humanoid.MoveDirection is driven by player input controllers and is
+	-- NOT populated for NPCs moved via Humanoid:MoveTo() -- verified live, it
+	-- stayed exactly 0 the whole time even while the enemy was visibly walking
+	-- across the map. So instead of reading MoveDirection, we measure ACTUAL
+	-- horizontal displacement per frame to detect real movement.
 	local phase = 0
+	local lastPos = rootPart.Position
 	return RunService.Heartbeat:Connect(function(dt: number)
-		if not enemyModel.Parent then return end
-		local moveSpeed = humanoid.MoveDirection.Magnitude > 0.05 and humanoid.WalkSpeed or 0
+		if not enemyModel.Parent or not rootPart.Parent then return end
+		local currentPos = rootPart.Position
+		local horizontalDelta = Vector3.new(currentPos.X - lastPos.X, 0, currentPos.Z - lastPos.Z)
+		local measuredSpeed = dt > 0 and (horizontalDelta.Magnitude / dt) or 0
+		lastPos = currentPos
+
+		local moveSpeed = measuredSpeed > 0.75 and humanoid.WalkSpeed or 0
 
 		if moveSpeed > 0 then
 			phase += dt * WALK_CYCLE_SPEED * (moveSpeed / 16)
