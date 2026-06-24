@@ -291,15 +291,20 @@ UpdateDayNight.OnClientEvent:Connect(function(phase: string)
 	end
 end)
 
-RequestStartWave.OnClientEvent:Connect(function(signal: string, nextWave: number)
+RequestStartWave.OnClientEvent:Connect(function(signal: string, nextWave: number, hasStealth: boolean?)
 	if signal == "ready" then
 		startBattleBtn.Text    = "⚔ MULAI WAVE " .. tostring(nextWave) .. "!"
 		startBattleBtn.Visible = true
 		startPulse()
 		setShopEnabled(true)
 
-		statusLabel.Text       = "🗺 Lihat jalur musuh → pasang tower → MULAI!"
-		statusLabel.TextColor3 = Color3.fromRGB(100, 255, 180)
+		if hasStealth then
+			statusLabel.Text       = "🌙 Wave malam akan datang — musuh siluman muncul! Pasang Light Node."
+			statusLabel.TextColor3 = Color3.fromRGB(150, 130, 255)
+		else
+			statusLabel.Text       = "🗺 Lihat jalur musuh → pasang tower → MULAI!"
+			statusLabel.TextColor3 = Color3.fromRGB(100, 255, 180)
+		end
 	end
 end)
 

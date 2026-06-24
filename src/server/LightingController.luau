@@ -22,10 +22,10 @@ local DAY_PROFILE = {
 
 -- Night profile settings
 local NIGHT_PROFILE = {
-	ClockTime = 22,
-	Ambient = Color3.fromRGB(15, 15, 30),
-	OutdoorAmbient = Color3.fromRGB(10, 10, 20),
-	Brightness = 0.3,
+	ClockTime = 21,
+	Ambient = Color3.fromRGB(55, 55, 80),
+	OutdoorAmbient = Color3.fromRGB(45, 45, 70),
+	Brightness = 1.1,
 }
 
 local function lerpColor(c1: Color3, c2: Color3, alpha: number): Color3

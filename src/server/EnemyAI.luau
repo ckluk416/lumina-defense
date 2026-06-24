@@ -380,11 +380,9 @@ function EnemyAI.setupEnemy(
 		humanoid.WalkSpeed = speed
 		humanoid.MaxHealth = maxHealth
 		humanoid.Health    = maxHealth
-
-		local walkConn = startProceduralWalk(enemyModel, humanoid)
-		if walkConn then
-			(activeEnemies[enemyModel] :: EnemyData).walkConnection = walkConn
-		end
+		-- NOTE: walk animation is handled CLIENT-SIDE now (see EnemyAnimator
+		-- LocalScript) -- driving Motor6D.Transform from the server didn't
+		-- reliably replicate to clients (verified visually via screenshots).
 	end
 end
 

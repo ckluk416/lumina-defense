@@ -282,9 +282,12 @@ function WaveManager.endWave()
 
 		-- Signal client: intermission ready, show Start Battle button
 		waitingForStartSignal = true
+		local nextWaveHasStealth = false
+		for _, enemyGroup in ipairs(WAVES[nextWave].enemies) do
+			if enemyGroup.name == "StealthEnemy" then nextWaveHasStealth = true; break end
+		end
 		-- Fire to ALL clients so any player can start
-		-- (in a multiplayer game you might restrict this to host/first player)
-		RequestStartWave:FireAllClients("ready", nextWave)
+		RequestStartWave:FireAllClients("ready", nextWave, nextWaveHasStealth)
 	end)
 end
 
