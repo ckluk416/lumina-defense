@@ -14,7 +14,6 @@ local Assets = ReplicatedStorage:WaitForChild("Assets")
 local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
 local UpdateWave    = RemoteEvents:WaitForChild("UpdateWave")    :: RemoteEvent
 local UpdateBaseHP  = RemoteEvents:WaitForChild("UpdateBaseHP")  :: RemoteEvent
--- Fired server→client to tell the UI whether the Start Battle button is usable
 local RequestStartWave = RemoteEvents:WaitForChild("RequestStartWave") :: RemoteEvent
 
 export type WaveStatus = "Intermission" | "Active" | "Completed" | "GameOver"
@@ -22,54 +21,54 @@ export type WaveStatus = "Intermission" | "Active" | "Completed" | "GameOver"
 local MAX_BASE_HP = 100
 local baseHP      = MAX_BASE_HP
 
--- ────────────────────────────────────────────────────────────────
--- WAVE DATA
--- spawnDelay  = seconds between each enemy in the group (pace)
--- routeIndex  = 1-based; resolved to actual route letter at runtime
--- speed       = WalkSpeed override for enemies in this wave/group
---               (nil = use EnemyAI default per enemy type)
--- Wave 1-2 are slow and sparse; wave 3-4 ramp up intensity.
--- ────────────────────────────────────────────────────────────────
 local WAVES = {
 	[1] = {
-		-- Very slow, few enemies – let the player settle in.
 		enemies = {
-			{name = "BasicEnemy", count = 4,  spawnDelay = 3.5, routeIndex = 1, speed = 10},
+			{name = "BasicEnemy", count = 3,  spawnDelay = 4.2, routeIndex = 1, speed = 6},
 		},
 	},
 	[2] = {
 		enemies = {
-			{name = "BasicEnemy", count = 5,  spawnDelay = 2.5, routeIndex = 1, speed = 11},
-			{name = "BasicEnemy", count = 3,  spawnDelay = 3.0, routeIndex = 2, speed = 11},
+			{name = "BasicEnemy", count = 4,  spawnDelay = 3.8, routeIndex = 1, speed = 7},
 		},
 	},
 	[3] = {
-		-- Speed and count pick up; first stealth enemies appear.
 		enemies = {
-			{name = "BasicEnemy",  count = 8,  spawnDelay = 1.8, routeIndex = 1, speed = 13},
-			{name = "BasicEnemy",  count = 5,  spawnDelay = 2.0, routeIndex = 2, speed = 13},
-			{name = "StealthEnemy",count = 3,  spawnDelay = 2.5, routeIndex = 3, speed = 14},
+			{name = "BasicEnemy", count = 3,  spawnDelay = 4.0, routeIndex = 1, speed = 6},
+			{name = "BasicEnemy", count = 3,  spawnDelay = 4.2, routeIndex = 2, speed = 6},
+			{name = "StealthEnemy", count = 2, spawnDelay = 4.5, routeIndex = 1, speed = 7},
 		},
 	},
 	[4] = {
-		-- Full intensity: fast, many, several stealth.
 		enemies = {
-			{name = "BasicEnemy",  count = 12, spawnDelay = 1.0, routeIndex = 1, speed = 16},
-			{name = "StealthEnemy",count = 6,  spawnDelay = 1.2, routeIndex = 2, speed = 18},
-			{name = "BasicEnemy",  count = 8,  spawnDelay = 1.0, routeIndex = 3, speed = 16},
+			{name = "BasicEnemy", count = 6,  spawnDelay = 2.8, routeIndex = 1, speed = 10},
+			{name = "BasicEnemy", count = 4,  spawnDelay = 3.0, routeIndex = 2, speed = 10},
+		},
+	},
+	[5] = {
+		enemies = {
+			{name = "BasicEnemy", count = 8,  spawnDelay = 2.2, routeIndex = 1, speed = 11},
+			{name = "BasicEnemy", count = 6,  spawnDelay = 2.4, routeIndex = 2, speed = 11},
+		},
+	},
+	[6] = {
+		enemies = {
+			{name = "BasicEnemy",  count = 8,  spawnDelay = 2.0, routeIndex = 1, speed = 12},
+			{name = "StealthEnemy",count = 3,  spawnDelay = 2.5, routeIndex = 2, speed = 13},
+		},
+	},
+	[7] = {
+		enemies = {
+			{name = "BasicEnemy",  count = 10, spawnDelay = 1.6, routeIndex = 1, speed = 14},
+			{name = "StealthEnemy",count = 5,  spawnDelay = 1.8, routeIndex = 2, speed = 15},
+			{name = "BasicEnemy",  count = 6,  spawnDelay = 1.6, routeIndex = 3, speed = 14},
 		},
 	},
 }
 
 local currentWave = 0
 local status: WaveStatus = "Intermission"
-
--- Whether the server is currently waiting for a player to press Start Battle.
 local waitingForStartSignal = false
-
--- ────────────────────────────────────────────────────────────────
--- HELPERS
--- ────────────────────────────────────────────────────────────────
 
 local function resolveRouteId(routeIndex: number): string
 	local routeIds = EnvironmentSetup.getRouteIds()
@@ -100,10 +99,6 @@ local function getRouteWaypoints(routeId: string): {Vector3}
 	return EnvironmentSetup.getRouteWaypoints(routeId)
 end
 
--- ────────────────────────────────────────────────────────────────
--- ENEMY SPAWNING
--- ────────────────────────────────────────────────────────────────
-
 function WaveManager.spawnEnemy(enemyName: string, routeId: string, speedOverride: number?)
 	local original = Assets:FindFirstChild(enemyName)
 	if not original or not original:IsA("Model") then
@@ -132,10 +127,6 @@ function WaveManager.spawnEnemy(enemyName: string, routeId: string, speedOverrid
 	EnemyAI.moveAlongWaypoints(newEnemy, waypoints)
 end
 
--- ────────────────────────────────────────────────────────────────
--- BASE DAMAGE
--- ────────────────────────────────────────────────────────────────
-
 function WaveManager.damageBase(amount: number)
 	baseHP = math.max(0, baseHP - amount)
 	UpdateBaseHP:FireAllClients(baseHP, MAX_BASE_HP)
@@ -151,10 +142,6 @@ function WaveManager.getBaseHP(): number
 	return baseHP
 end
 
--- ────────────────────────────────────────────────────────────────
--- MATCH LIFECYCLE
--- ────────────────────────────────────────────────────────────────
-
 function WaveManager.resetForNewMatch()
 	currentWave = 0
 	status = "Intermission"
@@ -162,8 +149,6 @@ function WaveManager.resetForNewMatch()
 	waitingForStartSignal = false
 end
 
--- Called by a client (via RequestStartWave RemoteEvent) to begin the wave
--- once they've finished placing towers during intermission.
 function WaveManager.onPlayerRequestStart(player: Player)
 	if not waitingForStartSignal then return end
 	waitingForStartSignal = false
@@ -189,24 +174,15 @@ function WaveManager.startWave()
 	print("[WaveManager] Wave " .. currentWave .. " started!")
 	UpdateWave:FireAllClients(currentWave, "Active")
 
-	-- Day/Night phase
-	local waveHasStealthEnemy = false
-	for _, enemyGroup in ipairs(waveData.enemies) do
-		if enemyGroup.name == "StealthEnemy" then
-			waveHasStealthEnemy = true
-			break
-		end
-	end
-	if waveHasStealthEnemy then
+	-- Night falls at the end of every 3rd wave (one "day" = 3 waves)
+	if currentWave % 3 == 0 then
 		LightingController.setPhase("Night", 4)
 	else
 		LightingController.setPhase("Day", 4)
 	end
 
-	-- Clear path preview now that the battle has started
 	PathPreview.clearAll()
 
-	-- Spawn enemy groups in parallel
 	local groupsRemaining = #waveData.enemies
 	local thisWaveToken   = currentWave
 
@@ -227,10 +203,6 @@ function WaveManager.startWave()
 		end)
 	end
 end
-
--- ────────────────────────────────────────────────────────────────
--- WAVE CLEAR / INTERMISSION
--- ────────────────────────────────────────────────────────────────
 
 function WaveManager.waitForWaveClear(waveToken: number)
 	local SAFETY_TIMEOUT = 120
@@ -261,11 +233,8 @@ function WaveManager.endWave()
 
 	LightingController.setPhase("Day", 2.5)
 
-	-- If there's a next wave, enter manual-start intermission.
-	-- Otherwise trigger victory.
 	local nextWave = currentWave + 1
 	if not WAVES[nextWave] then
-		-- No more waves
 		status = "Completed"
 		UpdateWave:FireAllClients(currentWave, "Victory")
 		return
@@ -274,47 +243,32 @@ function WaveManager.endWave()
 	task.spawn(function()
 		print("[WaveManager] Intermission: show path preview for wave " .. nextWave)
 
-		-- Show path preview for the upcoming wave's routes during intermission
 		local nextRoutes = getActiveRoutes(nextWave)
 		if #nextRoutes > 0 then
 			PathPreview.showRoutes(nextRoutes)
 		end
 
-		-- Signal client: intermission ready, show Start Battle button
 		waitingForStartSignal = true
-		local nextWaveHasStealth = false
-		for _, enemyGroup in ipairs(WAVES[nextWave].enemies) do
-			if enemyGroup.name == "StealthEnemy" then nextWaveHasStealth = true; break end
-		end
-		-- Fire to ALL clients so any player can start
-		RequestStartWave:FireAllClients("ready", nextWave, nextWaveHasStealth)
+		local nextWaveIsNight = (nextWave % 3 == 0)
+		RequestStartWave:FireAllClients("ready", nextWave, nextWaveIsNight)
 	end)
 end
 
--- ────────────────────────────────────────────────────────────────
--- INITIAL MATCH START
--- ────────────────────────────────────────────────────────────────
-
 function WaveManager.beginMatch()
 	task.spawn(function()
-		task.wait(2) -- let map finish loading on clients
+		task.wait(2)
 
-		-- Show path preview for wave 1
 		local firstRoutes = getActiveRoutes(1)
 		PathPreview.showRoutes(firstRoutes)
 
 		UpdateWave:FireAllClients(0, "Intermission")
 		UpdateBaseHP:FireAllClients(baseHP, MAX_BASE_HP)
 
-		-- Signal clients: ready to start wave 1
 		waitingForStartSignal = true
 		RequestStartWave:FireAllClients("ready", 1)
 	end)
 end
 
--- ────────────────────────────────────────────────────────────────
--- REMOTE EVENT LISTENER (client requests start)
--- ────────────────────────────────────────────────────────────────
 RequestStartWave.OnServerEvent:Connect(function(player: Player)
 	WaveManager.onPlayerRequestStart(player)
 end)

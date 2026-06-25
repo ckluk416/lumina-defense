@@ -27,7 +27,7 @@ local rangeIndicator:    Part?  = nil
 local innerRangeIndicator: Part? = nil
 
 local TOWER_INNER_RANGES: {[string]: number} = {
-	["Mortar_Roblox"] = 8,
+	["Mortar_Roblox"] = 15,
 }
 local isPlacing        = false
 local currentTowerName = ""

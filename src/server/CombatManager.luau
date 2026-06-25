@@ -20,7 +20,7 @@ local TOWER_STATS = {
 	},
 	["Mortar_Roblox"] = {
 		isLightNode = false, isAOE = true,
-		aoeRadius = 14, damage = 45, range = 50, innerRange = 8, fireRate = 3.0,
+		aoeRadius = 14, damage = 45, range = 50, innerRange = 15, fireRate = 3.0,
 	},
 	["LightNode_Roblox"] = {
 		isLightNode = true, range = 25,

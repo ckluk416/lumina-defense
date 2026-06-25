@@ -16,7 +16,7 @@ local ALLOWED_TOWERS = {
 	["ArcherTower_Roblox"]  = {cost = 50},
 	["LightNode_Roblox"]    = {cost = 30},
 	["MageTower_Roblox"]    = {cost = 80},
-	["Mortar_Roblox"]       = {cost = 150},
+	["Mortar_Roblox"]       = {cost = 220},
 }
 
 local MAX_TOWERS_PER_PLAYER = 12

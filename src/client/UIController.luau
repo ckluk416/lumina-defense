@@ -154,7 +154,7 @@ shopLayout.Parent                = shopFrame
 
 local TOWER_SHOP = {
 	{name = "ArcherTower_Roblox",  label = "Archer",  cost = 50,  color = Color3.fromRGB(180, 80, 60),  key = "B"},
-	{name = "Mortar_Roblox",       label = "Mortar",  cost = 150, color = Color3.fromRGB(80, 80, 80),   key = "M"},
+	{name = "Mortar_Roblox",       label = "Mortar",  cost = 220, color = Color3.fromRGB(80, 80, 80),   key = "M"},
 	{name = "LightNode_Roblox",    label = "Light",   cost = 30,  color = Color3.fromRGB(255, 220, 60), key = "L"},
 	{name = "MageTower_Roblox",    label = "Mage",    cost = 80,  color = Color3.fromRGB(100, 60, 180), key = "N"},
 }
