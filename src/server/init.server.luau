@@ -7,6 +7,9 @@ print("[Server] Initializing...")
 -- SpawnPoint_<id> / Route_<id> / Portal objects existing in Workspace.
 local MapGenerator = require(script:WaitForChild("MapGenerator") :: ModuleScript)
 local EnvironmentSetup = require(script:WaitForChild("EnvironmentSetup") :: ModuleScript)
+local LobbyBuilder = require(script:WaitForChild("LobbyBuilder") :: ModuleScript)
+
+LobbyBuilder.build()
 
 local generatedRouteIds = MapGenerator.generate()
 EnvironmentSetup.setRouteIds(generatedRouteIds)

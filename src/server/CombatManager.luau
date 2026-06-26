@@ -357,12 +357,14 @@ RunService.Heartbeat:Connect(function()
 		elseif struct.name == "MageTower_Roblox" then
 			local sr = struct.stats.aoeRadius or 12
 			fireMageOrb(origin, targetPos, sr)
-			for enemyModel in pairs(activeEnemies) do
+			for enemyModel, enemyData in pairs(activeEnemies) do
 				local ePos = enemyModel.PrimaryPart
 					and enemyModel.PrimaryPart.Position
 					or enemyModel:GetPivot().Position
 				if (ePos - targetPos).Magnitude <= sr then
-					EnemyAI.damageEnemy(enemyModel, struct.stats.damage)
+					if not enemyData.isStealth or isPositionRevealedByLight(ePos) then
+						EnemyAI.damageEnemy(enemyModel, struct.stats.damage)
+					end
 				end
 			end
 
@@ -370,12 +372,14 @@ RunService.Heartbeat:Connect(function()
 			local sr = struct.stats.aoeRadius or 14
 			fireMortarMissile(origin, targetPos, sr, function(impactPos: Vector3)
 				local liveEnemies = EnemyAI.getActiveEnemies()
-				for enemyModel in pairs(liveEnemies) do
+				for enemyModel, enemyData in pairs(liveEnemies) do
 					local ePos = enemyModel.PrimaryPart
 						and enemyModel.PrimaryPart.Position
 						or enemyModel:GetPivot().Position
 					if (ePos - impactPos).Magnitude <= sr then
-						EnemyAI.damageEnemy(enemyModel, struct.stats.damage)
+						if not enemyData.isStealth or isPositionRevealedByLight(ePos) then
+							EnemyAI.damageEnemy(enemyModel, struct.stats.damage)
+						end
 					end
 				end
 			end)

@@ -26,6 +26,12 @@ export type EnemyData = {
 
 local activeEnemies: {[Model]: EnemyData} = {}
 
+-- Fired whenever an enemy leaves play, for any reason: (byPlayer: boolean, isStealth: boolean)
+-- byPlayer=true means killed by a tower; false means it reached the base.
+-- WaveManager listens to this to track kill counts and remaining-enemy counts.
+local enemyRemovedEvent = Instance.new("BindableEvent")
+EnemyAI.EnemyRemoved = enemyRemovedEvent
+
 function EnemyAI.getActiveEnemies()
 	return activeEnemies
 end
@@ -71,7 +77,7 @@ local function updateHPBar(data: EnemyData)
 	end
 end
 
-local WALK_ANIM_ID    = "rbxassetid://180426354" -- official R6 walk animation (kept for reference, no longer used -- see startProceduralWalk below)
+local WALK_ANIM_ID    = "rbxassetid://180426354" -- official R6 walk animation
 local DIE_ANIM_ID     = nil :: string? -- no animation; death uses a programmatic ragdoll-fall instead (see playDeathEffect)
 
 -- R6 rig models built from individual unwelded parts (like our enemy models)
@@ -94,21 +100,14 @@ local function ensureR6Motors(enemyModel: Model)
 	local rootPart = enemyModel:FindFirstChild("HumanoidRootPart")
 	if not torso or not rootPart then return end
 
-	-- Already rigged (avoid double-processing if this somehow runs twice)
 	if torso:FindFirstChild("RootJoint") then return end
 
-	-- Strip EVERY WeldConstraint in the model first. The original model welds
-	-- HumanoidRootPart rigidly to Torso, Head, Eye, both Arms, and both Legs --
-	-- removing only some of these (e.g. just the ones in R6_MOTOR_OFFSETS)
-	-- left Head/Eye still rigidly glued to the root, fighting the new Neck
-	-- motor. A clean slate avoids any such conflicts.
 	for _, w in ipairs(enemyModel:GetDescendants()) do
 		if w:IsA("WeldConstraint") then
 			w:Destroy()
 		end
 	end
 
-	-- Root joint: HumanoidRootPart <-> Torso (required for the Humanoid/Animator to drive anything)
 	local rootJoint = Instance.new("Motor6D")
 	rootJoint.Name  = "RootJoint"
 	rootJoint.Part0 = rootPart
@@ -130,9 +129,6 @@ local function ensureR6Motors(enemyModel: Model)
 		end
 	end
 
-	-- Eye is purely cosmetic (attached to Head in the source model); re-weld
-	-- it to Head specifically (not the root) so it follows head rotation
-	-- without needing its own Motor6D.
 	local head = enemyModel:FindFirstChild("Head")
 	local eye  = enemyModel:FindFirstChild("Eye")
 	if head and eye then
@@ -143,19 +139,9 @@ local function ensureR6Motors(enemyModel: Model)
 	end
 end
 
--- PROCEDURAL WALK: the official R6 walk animation (180426354), when played
--- through our motors, rotates Left/Right Shoulder & Hip dominantly around
--- the Z-axis (side-to-side ab/adduction) instead of the X-axis (front-back
--- swing) -- verified live by sampling Motor.Transform:ToEulerAnglesXYZ()
--- during playback, which showed Z components up to ~70 deg vs near-zero X.
--- That's why limbs visibly swing sideways ("tangan kanan, kaki kiri")
--- instead of a normal forward gait. Rather than depend on that animation
--- asset's compatibility with this custom rig, we drive the 4 limb motors
--- directly every frame with a simple contralateral sine-wave gait, rotating
--- ONLY around local X (guaranteed correct front-back swing).
 local WALK_SWING_AMPLITUDE_ARM = math.rad(35)
 local WALK_SWING_AMPLITUDE_LEG = math.rad(25)
-local WALK_CYCLE_SPEED         = 6 -- radians per stud moved, roughly matches a natural stride rate
+local WALK_CYCLE_SPEED         = 6
 
 local function startProceduralWalk(enemyModel: Model, humanoid: Humanoid): RBXScriptConnection?
 	local torso = enemyModel:FindFirstChild("Torso")
@@ -168,11 +154,6 @@ local function startProceduralWalk(enemyModel: Model, humanoid: Humanoid): RBXSc
 	local rightHip       = torso:FindFirstChild("Right Hip") :: Motor6D?
 	if not (leftShoulder and rightShoulder and leftHip and rightHip) then return nil end
 
-	-- NOTE: Humanoid.MoveDirection is driven by player input controllers and is
-	-- NOT populated for NPCs moved via Humanoid:MoveTo() -- verified live, it
-	-- stayed exactly 0 the whole time even while the enemy was visibly walking
-	-- across the map. So instead of reading MoveDirection, we measure ACTUAL
-	-- horizontal displacement per frame to detect real movement.
 	local phase = 0
 	local lastPos = rootPart.Position
 	return RunService.Heartbeat:Connect(function(dt: number)
@@ -190,11 +171,9 @@ local function startProceduralWalk(enemyModel: Model, humanoid: Humanoid): RBXSc
 
 			leftShoulder.Transform  = CFrame.Angles(swing * WALK_SWING_AMPLITUDE_ARM, 0, 0)
 			rightShoulder.Transform = CFrame.Angles(-swing * WALK_SWING_AMPLITUDE_ARM, 0, 0)
-			-- contralateral gait: left leg swings opposite to left arm
 			leftHip.Transform  = CFrame.Angles(-swing * WALK_SWING_AMPLITUDE_LEG, 0, 0)
 			rightHip.Transform = CFrame.Angles(swing * WALK_SWING_AMPLITUDE_LEG, 0, 0)
 		else
-			-- ease back to neutral standing pose when not moving
 			leftShoulder.Transform  = leftShoulder.Transform:Lerp(CFrame.new(), 0.2)
 			rightShoulder.Transform = rightShoulder.Transform:Lerp(CFrame.new(), 0.2)
 			leftHip.Transform        = leftHip.Transform:Lerp(CFrame.new(), 0.2)
@@ -228,10 +207,6 @@ local function playAnimation(enemyModel: Model, animId: string, looped: boolean)
 	return track :: AnimationTrack
 end
 
--- Death: a simple "falls over and lies on the ground" effect, not a shrink-
--- in-place. We rotate the whole model 90 degrees onto its side around its
--- current position (a believable ragdoll-style collapse without needing a
--- physics ragdoll setup), hold briefly on the ground, then fade out.
 local function playDeathEffect(enemyModel: Model, callback: () -> ())
 	local humanoid = enemyModel:FindFirstChildOfClass("Humanoid")
 	local rootPart = enemyModel:FindFirstChild("HumanoidRootPart") :: BasePart?
@@ -240,11 +215,9 @@ local function playDeathEffect(enemyModel: Model, callback: () -> ())
 		humanoid:UnequipTools()
 		humanoid.WalkSpeed = 0
 		humanoid.JumpPower = 0
-		humanoid.PlatformStand = true -- let the model topple instead of staying humanoid-upright
+		humanoid.PlatformStand = true
 	end
 
-	-- Stop the walk animation track so the legs/arms freeze in place instead
-	-- of continuing to cycle while the body falls over.
 	local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
 	if animator then
 		for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
@@ -252,8 +225,6 @@ local function playDeathEffect(enemyModel: Model, callback: () -> ())
 		end
 	end
 
-	-- Stop the procedural walk loop so the legs/arms freeze in place instead
-	-- of continuing to cycle while the body falls over.
 	local data = activeEnemies[enemyModel]
 	if data and data.walkConnection then
 		data.walkConnection:Disconnect()
@@ -265,7 +236,6 @@ local function playDeathEffect(enemyModel: Model, callback: () -> ())
 	local FADE_DURATION  = 0.5
 
 	if rootPart then
-		-- Fall to one side (random left/right) and drop slightly to rest on the ground
 		local fallDirection = if math.random() < 0.5 then 1 else -1
 		local fallCFrame = rootPart.CFrame
 			* CFrame.Angles(0, 0, math.rad(90) * fallDirection)
@@ -278,7 +248,6 @@ local function playDeathEffect(enemyModel: Model, callback: () -> ())
 		fallTween:Play()
 	end
 
-	-- After lying on the ground for a moment, fade everything out and destroy
 	task.delay(FALL_DURATION + LIE_DURATION, function()
 		local parts: {BasePart} = {}
 		for _, d in ipairs(enemyModel:GetDescendants()) do
@@ -315,12 +284,14 @@ function EnemyAI.killEnemy(enemyModel: Model, byPlayer: boolean?)
 	if not data then return end
 	if data.dying then return end
 	data.dying = true
+	local wasStealth = data.isStealth
 
 	if data.connection then
 		data.connection:Disconnect()
 	end
 
 	activeEnemies[enemyModel] = nil
+	enemyRemovedEvent:Fire(byPlayer == true, wasStealth)
 
 	if byPlayer then
 		local EconomyManager = require(script.Parent:WaitForChild("EconomyManager"))
@@ -343,6 +314,7 @@ function EnemyAI.cleanupEnemy(enemyModel: Model)
 	if data and data.connection then data.connection:Disconnect() end
 	if data and data.walkConnection then data.walkConnection:Disconnect() end
 	activeEnemies[enemyModel] = nil
+	if data then enemyRemovedEvent:Fire(false, data.isStealth) end
 	if enemyModel and enemyModel.Parent then enemyModel:Destroy() end
 end
 
@@ -357,8 +329,6 @@ function EnemyAI.setupEnemy(
 	local stealthValue = if isStealth ~= nil then isStealth else false
 	local rewardValue  = if reward ~= nil then reward else 15
 
-	-- Fix the rig BEFORE creating the HP bar / setting up data, so the
-	-- Motor6Ds exist by the time the procedural walk loop attaches below.
 	ensureR6Motors(enemyModel)
 
 	local hpBarFill = createHPBar(enemyModel)
@@ -380,9 +350,6 @@ function EnemyAI.setupEnemy(
 		humanoid.WalkSpeed = speed
 		humanoid.MaxHealth = maxHealth
 		humanoid.Health    = maxHealth
-		-- NOTE: walk animation is handled CLIENT-SIDE now (see EnemyAnimator
-		-- LocalScript) -- driving Motor6D.Transform from the server didn't
-		-- reliably replicate to clients (verified visually via screenshots).
 	end
 end
 

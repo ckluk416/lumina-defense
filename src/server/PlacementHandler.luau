@@ -7,6 +7,8 @@ local Workspace = game:GetService("Workspace")
 local RemoteEvents     = ReplicatedStorage:WaitForChild("RemoteEvents")
 local RequestPlacement = RemoteEvents:WaitForChild("RequestPlacement") :: RemoteEvent
 local RequestRemoveTower = RemoteEvents:WaitForChild("RequestRemoveTower") :: RemoteEvent
+local RequestBuySlot = RemoteEvents:WaitForChild("RequestBuySlot") :: RemoteEvent
+local UpdateExtraSlotInfo = RemoteEvents:WaitForChild("UpdateExtraSlotInfo") :: RemoteEvent
 local Assets           = ReplicatedStorage:WaitForChild("Assets")
 
 local EconomyManager = require(script.Parent:WaitForChild("EconomyManager") :: ModuleScript)
@@ -22,6 +24,23 @@ local ALLOWED_TOWERS = {
 local MAX_TOWERS_PER_PLAYER = 12
 local MINIMUM_DISTANCE = 14
 local REFUND_RATIO = 0.5
+local SLOT_BASE_COST = 300
+local SLOT_COST_MULTIPLIER = 1.6
+
+local extraSlots: {[number]: number} = {}
+
+local function getMaxTowers(player: Player): number
+	return MAX_TOWERS_PER_PLAYER + (extraSlots[player.UserId] or 0)
+end
+
+local function getNextSlotCost(player: Player): number
+	local bought = extraSlots[player.UserId] or 0
+	return math.floor(SLOT_BASE_COST * (SLOT_COST_MULTIPLIER ^ bought))
+end
+
+local function broadcastSlotInfo(player: Player)
+	UpdateExtraSlotInfo:FireClient(player, getMaxTowers(player), getNextSlotCost(player))
+end
 
 type PlacedEntry = {model: Model, position: Vector3, towerName: string}
 
@@ -82,8 +101,8 @@ RequestPlacement.OnServerEvent:Connect(function(player: Player, towerName, posit
 	local towerInfo = ALLOWED_TOWERS[towerName]
 	if not towerInfo then return end
 
-	if getPlayerTowerCount(player) >= MAX_TOWERS_PER_PLAYER then
-		warn(player.Name .. " exceeded tower limit (" .. MAX_TOWERS_PER_PLAYER .. ")")
+	if getPlayerTowerCount(player) >= getMaxTowers(player) then
+		warn(player.Name .. " exceeded tower limit (" .. getMaxTowers(player) .. ")")
 		return
 	end
 
@@ -115,9 +134,9 @@ RequestPlacement.OnServerEvent:Connect(function(player: Player, towerName, posit
 	local UpdateMoney      = RemoteEvents:FindFirstChild("UpdateMoney")      :: RemoteEvent
 	local UpdateTowerCount = RemoteEvents:FindFirstChild("UpdateTowerCount") :: RemoteEvent
 	if UpdateMoney      then UpdateMoney:FireClient(player, EconomyManager.getMoney(player)) end
-	if UpdateTowerCount then UpdateTowerCount:FireClient(player, getPlayerTowerCount(player), MAX_TOWERS_PER_PLAYER) end
+	if UpdateTowerCount then UpdateTowerCount:FireClient(player, getPlayerTowerCount(player), getMaxTowers(player)) end
 
-	print(player.Name .. " placed " .. towerName .. " (" .. getPlayerTowerCount(player) .. "/" .. MAX_TOWERS_PER_PLAYER .. ")")
+	print(player.Name .. " placed " .. towerName .. " (" .. getPlayerTowerCount(player) .. "/" .. getMaxTowers(player) .. ")")
 end)
 
 RequestRemoveTower.OnServerEvent:Connect(function(player: Player, model)
@@ -155,9 +174,32 @@ RequestRemoveTower.OnServerEvent:Connect(function(player: Player, model)
 	local UpdateMoney      = RemoteEvents:FindFirstChild("UpdateMoney")      :: RemoteEvent
 	local UpdateTowerCount = RemoteEvents:FindFirstChild("UpdateTowerCount") :: RemoteEvent
 	if UpdateMoney      then UpdateMoney:FireClient(player, EconomyManager.getMoney(player)) end
-	if UpdateTowerCount then UpdateTowerCount:FireClient(player, getPlayerTowerCount(player), MAX_TOWERS_PER_PLAYER) end
+	if UpdateTowerCount then UpdateTowerCount:FireClient(player, getPlayerTowerCount(player), getMaxTowers(player)) end
 
-	print(player.Name .. " removed " .. removedEntry.towerName .. " (" .. getPlayerTowerCount(player) .. "/" .. MAX_TOWERS_PER_PLAYER .. ")")
+	print(player.Name .. " removed " .. removedEntry.towerName .. " (" .. getPlayerTowerCount(player) .. "/" .. getMaxTowers(player) .. ")")
+end)
+
+RequestBuySlot.OnServerEvent:Connect(function(player: Player)
+	local cost = getNextSlotCost(player)
+	if not EconomyManager.deductMoney(player, cost) then
+		warn(player.Name .. " can't afford a new slot ($" .. cost .. ")")
+		return
+	end
+
+	extraSlots[player.UserId] = (extraSlots[player.UserId] or 0) + 1
+
+	local UpdateMoney      = RemoteEvents:FindFirstChild("UpdateMoney")      :: RemoteEvent
+	local UpdateTowerCount = RemoteEvents:FindFirstChild("UpdateTowerCount") :: RemoteEvent
+	if UpdateMoney      then UpdateMoney:FireClient(player, EconomyManager.getMoney(player)) end
+	if UpdateTowerCount then UpdateTowerCount:FireClient(player, getPlayerTowerCount(player), getMaxTowers(player)) end
+	broadcastSlotInfo(player)
+
+	print(player.Name .. " bought a slot! Max is now " .. getMaxTowers(player))
+end)
+
+game.Players.PlayerAdded:Connect(function(player: Player)
+	task.wait(2)
+	broadcastSlotInfo(player)
 end)
 
 function PlacementHandler.getMaxTowers(): number

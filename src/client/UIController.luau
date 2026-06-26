@@ -12,6 +12,9 @@ local UpdateBaseHP     = RemoteEvents:WaitForChild("UpdateBaseHP")     :: Remote
 local UpdateDayNight   = RemoteEvents:WaitForChild("UpdateDayNight")   :: RemoteEvent
 local UpdateTowerCount = RemoteEvents:WaitForChild("UpdateTowerCount") :: RemoteEvent
 local RequestStartWave = RemoteEvents:WaitForChild("RequestStartWave") :: RemoteEvent
+local UpdateWaveStats  = RemoteEvents:WaitForChild("UpdateWaveStats")  :: RemoteEvent
+local RequestBuySlot   = RemoteEvents:WaitForChild("RequestBuySlot")   :: RemoteEvent
+local UpdateExtraSlotInfo = RemoteEvents:WaitForChild("UpdateExtraSlotInfo") :: RemoteEvent
 
 local player    = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -32,10 +35,10 @@ topBar.BorderSizePixel        = 0
 topBar.Parent                 = screenGui
 
 local waveLabel = Instance.new("TextLabel")
-waveLabel.Size               = UDim2.new(0, 200, 1, 0)
+waveLabel.Size               = UDim2.new(0, 260, 1, 0)
 waveLabel.Position           = UDim2.new(0, 15, 0, 0)
 waveLabel.BackgroundTransparency = 1
-waveLabel.Text               = "⚔ Wave: 0"
+waveLabel.Text               = "⚔ Hari 1 • Wave 0"
 waveLabel.TextColor3         = Color3.fromRGB(255, 220, 100)
 waveLabel.TextSize           = 22
 waveLabel.Font               = Enum.Font.GothamBold
@@ -109,6 +112,33 @@ towerCountLabel.TextSize              = 15
 towerCountLabel.Font                  = Enum.Font.GothamMedium
 towerCountLabel.TextXAlignment        = Enum.TextXAlignment.Left
 towerCountLabel.Parent                = screenGui
+
+local statsLabel = Instance.new("TextLabel")
+statsLabel.Size                  = UDim2.new(0, 420, 0, 20)
+statsLabel.Position              = UDim2.new(0, 230, 0, 55)
+statsLabel.BackgroundTransparency = 1
+statsLabel.Text                  = "🗡️ 0  🌙 0  •  Sisa: 0/0"
+statsLabel.TextColor3            = Color3.fromRGB(210, 210, 220)
+statsLabel.TextSize              = 14
+statsLabel.Font                  = Enum.Font.Gotham
+statsLabel.TextXAlignment        = Enum.TextXAlignment.Left
+statsLabel.Parent                = screenGui
+
+local buySlotBtn = Instance.new("TextButton")
+buySlotBtn.Name            = "BuySlotBtn"
+buySlotBtn.Size            = UDim2.new(0, 150, 0, 36)
+buySlotBtn.Position        = UDim2.new(0, 155, 0, 90)
+buySlotBtn.BackgroundColor3= Color3.fromRGB(30, 90, 50)
+buySlotBtn.Text            = "➕ Slot ($300)"
+buySlotBtn.TextColor3      = Color3.fromRGB(255, 255, 255)
+buySlotBtn.TextSize        = 14
+buySlotBtn.Font            = Enum.Font.GothamBold
+buySlotBtn.Parent          = screenGui
+Instance.new("UICorner", buySlotBtn).CornerRadius = UDim.new(0, 8)
+
+buySlotBtn.MouseButton1Click:Connect(function()
+	RequestBuySlot:FireServer()
+end)
 
 local removeModeBtn = Instance.new("TextButton")
 removeModeBtn.Name            = "RemoveModeBtn"
@@ -239,9 +269,16 @@ UpdateTowerCount.OnClientEvent:Connect(function(current, max)
 	end
 end)
 
-UpdateWave.OnClientEvent:Connect(function(waveNum, waveStatus)
-	waveLabel.Text = "⚔ Wave: " .. tostring(waveNum)
+UpdateExtraSlotInfo.OnClientEvent:Connect(function(maxTowers: number, nextCost: number)
+	buySlotBtn.Text = "➕ Slot ($" .. nextCost .. ")"
+end)
 
+UpdateWaveStats.OnClientEvent:Connect(function(day: number, wave: number, basicKills: number, stealthKills: number, remaining: number, total: number)
+	waveLabel.Text = "⚔ Hari " .. day .. " • Wave " .. wave
+	statsLabel.Text = "🗡️ " .. basicKills .. "  🌙 " .. stealthKills .. "  •  Sisa: " .. remaining .. "/" .. total
+end)
+
+UpdateWave.OnClientEvent:Connect(function(waveNum, waveStatus)
 	if waveStatus == "Active" then
 		statusLabel.Text      = "🔥 Wave " .. waveNum .. " in progress!"
 		statusLabel.TextColor3 = Color3.fromRGB(255, 120, 80)

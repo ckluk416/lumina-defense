@@ -6,6 +6,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
 local EnemyAI = require(script.Parent:WaitForChild("EnemyAI") :: ModuleScript)
+local LeaderboardService = require(script.Parent:WaitForChild("LeaderboardService") :: ModuleScript)
 local PathPreview = require(script.Parent:WaitForChild("PathPreview") :: ModuleScript)
 local EnvironmentSetup = require(script.Parent:WaitForChild("EnvironmentSetup") :: ModuleScript)
 local LightingController = require(script.Parent:WaitForChild("LightingController") :: ModuleScript)
@@ -15,6 +16,7 @@ local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
 local UpdateWave    = RemoteEvents:WaitForChild("UpdateWave")    :: RemoteEvent
 local UpdateBaseHP  = RemoteEvents:WaitForChild("UpdateBaseHP")  :: RemoteEvent
 local RequestStartWave = RemoteEvents:WaitForChild("RequestStartWave") :: RemoteEvent
+local UpdateWaveStats  = RemoteEvents:WaitForChild("UpdateWaveStats")  :: RemoteEvent
 
 export type WaveStatus = "Intermission" | "Active" | "Completed" | "GameOver"
 
@@ -70,6 +72,49 @@ local currentWave = 0
 local status: WaveStatus = "Intermission"
 local waitingForStartSignal = false
 
+local basicKills, stealthKills = 0, 0
+local totalThisWave, remainingThisWave = 0, 0
+
+local function getDay(waveNum: number): number
+	return math.ceil(waveNum / 3)
+end
+
+local function broadcastStats()
+	UpdateWaveStats:FireAllClients(getDay(currentWave), currentWave, basicKills, stealthKills, remainingThisWave, totalThisWave)
+end
+
+EnemyAI.EnemyRemoved.Event:Connect(function(byPlayer: boolean, isStealth: boolean)
+	remainingThisWave = math.max(0, remainingThisWave - 1)
+	if byPlayer then
+		if isStealth then stealthKills += 1 else basicKills += 1 end
+	end
+	broadcastStats()
+end)
+
+-- Hand-tuned waves 1-7; beyond that, scale up gradually & indefinitely so
+-- a match can run for many days without a hard-coded ceiling.
+local function getWaveData(waveNum: number)
+	if WAVES[waveNum] then return WAVES[waveNum] end
+
+	local n = waveNum - 7 -- how far past the hand-tuned waves
+	local isNight = (waveNum % 3 == 0)
+
+	local basicCount = math.min(30, 10 + math.floor(n * 1.3))
+	local speed      = math.min(24, 14 + n * 0.35)
+	local spawnDelay = math.max(0.45, 1.5 - n * 0.025)
+
+	local enemies = {
+		{name = "BasicEnemy", count = basicCount, spawnDelay = spawnDelay, routeIndex = 1, speed = speed},
+		{name = "BasicEnemy", count = math.floor(basicCount * 0.7), spawnDelay = spawnDelay + 0.2, routeIndex = 2, speed = speed},
+	}
+	if isNight then
+		local stealthCount = math.min(14, 4 + math.floor(n * 0.6))
+		table.insert(enemies, {name = "StealthEnemy", count = stealthCount, spawnDelay = spawnDelay + 0.3, routeIndex = 3, speed = speed + 1})
+	end
+
+	return {enemies = enemies}
+end
+
 local function resolveRouteId(routeIndex: number): string
 	local routeIds = EnvironmentSetup.getRouteIds()
 	if #routeIds == 0 then
@@ -81,7 +126,7 @@ local function resolveRouteId(routeIndex: number): string
 end
 
 local function getActiveRoutes(waveIndex: number): {string}
-	local waveData = WAVES[waveIndex]
+	local waveData = getWaveData(waveIndex)
 	if not waveData then return {} end
 	local seen: {[string]: boolean} = {}
 	local routes: {string} = {}
@@ -147,6 +192,8 @@ function WaveManager.resetForNewMatch()
 	status = "Intermission"
 	baseHP = MAX_BASE_HP
 	waitingForStartSignal = false
+	basicKills, stealthKills = 0, 0
+	totalThisWave, remainingThisWave = 0, 0
 end
 
 function WaveManager.onPlayerRequestStart(player: Player)
@@ -160,19 +207,18 @@ function WaveManager.startWave()
 	if status ~= "Intermission" then return end
 
 	currentWave += 1
-	local waveData = WAVES[currentWave]
-
-	if not waveData then
-		status = "Completed"
-		print("[WaveManager] All waves completed! VICTORY!")
-		UpdateWave:FireAllClients(currentWave, "Victory")
-		return
-	end
+	local waveData = getWaveData(currentWave)
 
 	status = "Active"
 	waitingForStartSignal = false
 	print("[WaveManager] Wave " .. currentWave .. " started!")
 	UpdateWave:FireAllClients(currentWave, "Active")
+	LeaderboardService.reportWave(currentWave)
+
+	totalThisWave = 0
+	for _, g in ipairs(waveData.enemies) do totalThisWave += g.count end
+	remainingThisWave = totalThisWave
+	broadcastStats()
 
 	-- Night falls at the end of every 3rd wave (one "day" = 3 waves)
 	if currentWave % 3 == 0 then
@@ -234,12 +280,6 @@ function WaveManager.endWave()
 	LightingController.setPhase("Day", 2.5)
 
 	local nextWave = currentWave + 1
-	if not WAVES[nextWave] then
-		status = "Completed"
-		UpdateWave:FireAllClients(currentWave, "Victory")
-		return
-	end
-
 	task.spawn(function()
 		print("[WaveManager] Intermission: show path preview for wave " .. nextWave)
 
@@ -263,6 +303,7 @@ function WaveManager.beginMatch()
 
 		UpdateWave:FireAllClients(0, "Intermission")
 		UpdateBaseHP:FireAllClients(baseHP, MAX_BASE_HP)
+		broadcastStats()
 
 		waitingForStartSignal = true
 		RequestStartWave:FireAllClients("ready", 1)
