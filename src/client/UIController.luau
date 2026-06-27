@@ -15,6 +15,8 @@ local RequestStartWave = RemoteEvents:WaitForChild("RequestStartWave") :: Remote
 local UpdateWaveStats  = RemoteEvents:WaitForChild("UpdateWaveStats")  :: RemoteEvent
 local RequestBuySlot   = RemoteEvents:WaitForChild("RequestBuySlot")   :: RemoteEvent
 local UpdateExtraSlotInfo = RemoteEvents:WaitForChild("UpdateExtraSlotInfo") :: RemoteEvent
+local UpdateMapState   = RemoteEvents:WaitForChild("UpdateMapState")   :: RemoteEvent
+local RequestReturnToLobby = RemoteEvents:WaitForChild("RequestReturnToLobby") :: RemoteEvent
 
 local player    = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -26,6 +28,7 @@ screenGui.Name           = "GameHUD"
 screenGui.ResetOnSpawn   = false
 screenGui.IgnoreGuiInset = true
 screenGui.Parent         = playerGui
+screenGui.Enabled        = false -- hidden until the player enters the TD map; LobbyBuilder/Game toggles this via UpdateMapState
 
 local topBar = Instance.new("Frame")
 topBar.Size                  = UDim2.new(1, 0, 0, 50)
@@ -108,7 +111,7 @@ towerCountLabel.Position              = UDim2.new(0, 15, 0, 55)
 towerCountLabel.BackgroundTransparency = 1
 towerCountLabel.Text                  = "🏰 Tower: 0/12"
 towerCountLabel.TextColor3            = Color3.fromRGB(180, 220, 255)
-towerCountLabel.TextSize              = 15
+towerCountLabel.TextSize              = 17
 towerCountLabel.Font                  = Enum.Font.GothamMedium
 towerCountLabel.TextXAlignment        = Enum.TextXAlignment.Left
 towerCountLabel.Parent                = screenGui
@@ -119,7 +122,7 @@ statsLabel.Position              = UDim2.new(0, 230, 0, 55)
 statsLabel.BackgroundTransparency = 1
 statsLabel.Text                  = "🗡️ 0  🌙 0  •  Sisa: 0/0"
 statsLabel.TextColor3            = Color3.fromRGB(210, 210, 220)
-statsLabel.TextSize              = 14
+statsLabel.TextSize              = 16
 statsLabel.Font                  = Enum.Font.Gotham
 statsLabel.TextXAlignment        = Enum.TextXAlignment.Left
 statsLabel.Parent                = screenGui
@@ -224,6 +227,25 @@ startBattleBtn.ZIndex          = 10
 startBattleBtn.Parent          = screenGui
 Instance.new("UICorner", startBattleBtn).CornerRadius = UDim.new(0, 10)
 
+local returnToLobbyBtn = Instance.new("TextButton")
+returnToLobbyBtn.Name            = "ReturnToLobbyBtn"
+returnToLobbyBtn.Size            = UDim2.new(0, 240, 0, 56)
+returnToLobbyBtn.Position        = UDim2.new(0.5, -120, 0.5, 40)
+returnToLobbyBtn.BackgroundColor3= Color3.fromRGB(60, 90, 200)
+returnToLobbyBtn.Text            = "🏠 Kembali ke Lobby"
+returnToLobbyBtn.TextColor3      = Color3.fromRGB(255, 255, 255)
+returnToLobbyBtn.TextSize        = 20
+returnToLobbyBtn.Font            = Enum.Font.GothamBold
+returnToLobbyBtn.Visible         = false
+returnToLobbyBtn.ZIndex          = 10
+returnToLobbyBtn.Parent          = screenGui
+Instance.new("UICorner", returnToLobbyBtn).CornerRadius = UDim.new(0, 10)
+
+returnToLobbyBtn.MouseButton1Click:Connect(function()
+	returnToLobbyBtn.Visible = false
+	RequestReturnToLobby:FireServer()
+end)
+
 local pulseTween: Tween? = nil
 local function startPulse()
 	if pulseTween then pulseTween:Cancel() end
@@ -247,6 +269,14 @@ startBattleBtn.MouseButton1Click:Connect(function()
 	PlacementSystem.cancelPlacement()
 	RequestStartWave:FireServer()
 end)
+
+local function setShopVisible(visible: boolean)
+	local tw = TweenService:Create(shopFrame, TweenInfo.new(0.25), {BackgroundTransparency = if visible then 0.3 else 1})
+	tw:Play()
+	for _, btn in ipairs(shopButtons) do
+		btn.Visible = visible
+	end
+end
 
 local function setShopEnabled(enabled: boolean)
 	for _, btn in ipairs(shopButtons) do
@@ -280,9 +310,10 @@ end)
 
 UpdateWave.OnClientEvent:Connect(function(waveNum, waveStatus)
 	if waveStatus == "Active" then
-		statusLabel.Text      = "🔥 Wave " .. waveNum .. " in progress!"
+		statusLabel.Text      = "🔥 Wave " .. waveNum .. " in progress! (toko ditutup sampai intermission)"
 		statusLabel.TextColor3 = Color3.fromRGB(255, 120, 80)
 		setShopEnabled(false)
+		setShopVisible(false)
 		startBattleBtn.Visible = false
 		stopPulse()
 
@@ -290,18 +321,22 @@ UpdateWave.OnClientEvent:Connect(function(waveNum, waveStatus)
 		statusLabel.Text       = "⏳ Intermission — Pasang tower, lalu MULAI!"
 		statusLabel.TextColor3 = Color3.fromRGB(100, 200, 255)
 		setShopEnabled(true)
+		setShopVisible(true)
 
 	elseif waveStatus == "Victory" then
 		statusLabel.Text      = "🏆 VICTORY! Semua wave selesai!"
 		statusLabel.TextColor3 = Color3.fromRGB(255, 220, 50)
 		setShopEnabled(false)
+		setShopVisible(false)
 		startBattleBtn.Visible = false
 
 	elseif waveStatus == "GameOver" then
 		statusLabel.Text      = "💀 GAME OVER — Base hancur!"
 		statusLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
 		setShopEnabled(false)
+		setShopVisible(false)
 		startBattleBtn.Visible = false
+		returnToLobbyBtn.Visible = true
 	end
 end)
 
@@ -330,6 +365,7 @@ end)
 
 RequestStartWave.OnClientEvent:Connect(function(signal: string, nextWave: number, hasStealth: boolean?)
 	if signal == "ready" then
+		returnToLobbyBtn.Visible = false
 		startBattleBtn.Text    = "⚔ MULAI WAVE " .. tostring(nextWave) .. "!"
 		startBattleBtn.Visible = true
 		startPulse()
@@ -343,6 +379,10 @@ RequestStartWave.OnClientEvent:Connect(function(signal: string, nextWave: number
 			statusLabel.TextColor3 = Color3.fromRGB(100, 255, 180)
 		end
 	end
+end)
+
+UpdateMapState.OnClientEvent:Connect(function(inMap: boolean)
+	screenGui.Enabled = inMap
 end)
 
 return UIController

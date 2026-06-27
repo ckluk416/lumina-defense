@@ -8,6 +8,10 @@ local LobbyBuilder = {}
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
+local ReplicatedStorage2 = game:GetService("ReplicatedStorage")
+local RemoteEvents = ReplicatedStorage2:WaitForChild("RemoteEvents")
+local UpdateMapState = RemoteEvents:WaitForChild("UpdateMapState") :: RemoteEvent
+local RequestReturnToLobby = RemoteEvents:WaitForChild("RequestReturnToLobby") :: RemoteEvent
 local Assets = ReplicatedStorage:WaitForChild("Assets")
 
 local LeaderboardService = require(script.Parent:WaitForChild("LeaderboardService") :: ModuleScript)
@@ -16,6 +20,7 @@ local LeaderboardService = require(script.Parent:WaitForChild("LeaderboardServic
 -- that nothing overlaps.
 local LOBBY_CENTER = Vector3.new(0, 0.5, 600)
 local PLATFORM_RADIUS = 32
+local LOBBY_SPAWN_POSITION = LOBBY_CENTER + Vector3.new(0, 4, 18)
 local GAME_SPAWN_POSITION = Vector3.new(8, 5, 12) -- just inside the main map, near Base
 
 local function buildPlatform(folder: Instance)
@@ -57,10 +62,12 @@ local function buildSpawn(folder: Instance)
 end
 
 local function buildSign(folder: Instance, position: Vector3, title: string, body: string, accentColor: Color3): SurfaceGui
+	local facing = CFrame.new(position) * CFrame.Angles(0, math.rad(180), 0)
+
 	local post = Instance.new("Part")
 	post.Name = "SignPost"
 	post.Size = Vector3.new(0.6, 6, 0.6)
-	post.Position = position + Vector3.new(0, 3, 0)
+	post.CFrame = facing * CFrame.new(0, 3, 0)
 	post.Anchored = true
 	post.Material = Enum.Material.Metal
 	post.Color = Color3.fromRGB(90, 90, 95)
@@ -69,7 +76,7 @@ local function buildSign(folder: Instance, position: Vector3, title: string, bod
 	local board = Instance.new("Part")
 	board.Name = "SignBoard"
 	board.Size = Vector3.new(10, 6, 0.4)
-	board.Position = position + Vector3.new(0, 7, 0)
+	board.CFrame = facing * CFrame.new(0, 7, 0)
 	board.Anchored = true
 	board.Material = Enum.Material.SmoothPlastic
 	board.Color = Color3.fromRGB(250, 250, 252)
@@ -225,7 +232,20 @@ local function buildPortal(folder: Instance)
 
 		debounce[player] = true
 		humanoidRootPart.CFrame = CFrame.new(GAME_SPAWN_POSITION)
+		UpdateMapState:FireClient(player, true)
 		task.delay(2, function() debounce[player] = nil end)
+	end)
+end
+
+local function setupReturnToLobby()
+	RequestReturnToLobby.OnServerEvent:Connect(function(player: Player)
+		local character = player.Character
+		if not character then return end
+		local humanoidRootPart = character:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if not humanoidRootPart then return end
+
+		humanoidRootPart.CFrame = CFrame.new(LOBBY_SPAWN_POSITION)
+		UpdateMapState:FireClient(player, false)
 	end)
 end
 
@@ -240,6 +260,7 @@ function LobbyBuilder.build()
 	buildLeaderboard(folder)
 	buildDecoration(folder)
 	buildPortal(folder)
+	setupReturnToLobby()
 
 	-- Make this the default spawn for new players instead of the old
 	-- Workspace.SpawnLocation sitting in the middle of the game map.
