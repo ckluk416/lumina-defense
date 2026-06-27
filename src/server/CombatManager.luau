@@ -31,6 +31,7 @@ type PlacedStructure = {
 	model:     Model,
 	name:      string,
 	stats:     any,
+	level:     number,
 	lastFired: number,
 }
 
@@ -284,18 +285,54 @@ local function isPositionRevealedByLight(position: Vector3): boolean
 end
 
 function CombatManager.registerStructure(model: Model, name: string)
-	local stats = TOWER_STATS[name]
-	if not stats then
+	local baseStats = TOWER_STATS[name]
+	if not baseStats then
 		warn("No stats found for structure: " .. name)
 		return
 	end
+	-- IMPORTANT: each placed tower gets its OWN copy of the stats table.
+	-- Without this, every tower of the same type shares the same table by
+	-- reference, so upgrading one tower's damage would silently upgrade
+	-- every tower of that type on the map.
+	local stats = table.clone(baseStats)
 	table.insert(activeStructures, {
 		model     = model,
 		name      = name,
 		stats     = stats,
+		level     = 1,
 		lastFired = 0,
 	})
 	print("Registered " .. name .. " to CombatManager")
+end
+
+-- Increases damage/range (and shrinks fireRate slightly) for one specific
+-- tower instance. Returns the new level, or nil if the model isn't tracked.
+function CombatManager.upgradeStructure(model: Model): number?
+	for _, struct in ipairs(activeStructures) do
+		if struct.model == model then
+			struct.level += 1
+			if struct.stats.damage then
+				struct.stats.damage = math.floor(struct.stats.damage * 1.3)
+			end
+			if struct.stats.range then
+				struct.stats.range = struct.stats.range * 1.12
+			end
+			if struct.stats.fireRate then
+				struct.stats.fireRate = struct.stats.fireRate * 0.92
+			end
+			return struct.level
+		end
+	end
+	return nil
+end
+
+function CombatManager.getStructureLevel(model: Model): number?
+	for _, struct in ipairs(activeStructures) do
+		if struct.model == model then
+			return struct.level
+		end
+	end
+	return nil
 end
 
 function CombatManager.removeStructure(model: Model)

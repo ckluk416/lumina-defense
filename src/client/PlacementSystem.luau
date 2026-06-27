@@ -10,6 +10,7 @@ local RunService       = game:GetService("RunService")
 local RemoteEvents     = ReplicatedStorage:WaitForChild("RemoteEvents")
 local RequestPlacement = RemoteEvents:WaitForChild("RequestPlacement") :: RemoteEvent
 local RequestRemoveTower = RemoteEvents:WaitForChild("RequestRemoveTower") :: RemoteEvent
+local RequestUpgradeTower = RemoteEvents:WaitForChild("RequestUpgradeTower") :: RemoteEvent
 local Assets           = ReplicatedStorage:WaitForChild("Assets")
 
 local player = Players.LocalPlayer
@@ -33,6 +34,7 @@ local isPlacing        = false
 local currentTowerName = ""
 local placingEnabled   = true
 local removeModeEnabled = false
+local upgradeModeEnabled = false
 
 local removeHighlight: Highlight? = nil
 local hoveredTowerModel: Model? = nil
@@ -147,6 +149,18 @@ end
 function PlacementSystem.setRemoveModeEnabled(enabled: boolean)
 	removeModeEnabled = enabled
 	if enabled then
+		upgradeModeEnabled = false
+		PlacementSystem.cancelPlacement()
+	else
+		if removeHighlight then removeHighlight:Destroy(); removeHighlight = nil end
+		hoveredTowerModel = nil
+	end
+end
+
+function PlacementSystem.setUpgradeModeEnabled(enabled: boolean)
+	upgradeModeEnabled = enabled
+	if enabled then
+		removeModeEnabled = false
 		PlacementSystem.cancelPlacement()
 	else
 		if removeHighlight then removeHighlight:Destroy(); removeHighlight = nil end
@@ -200,7 +214,7 @@ end
 -- under a Folder with no raycast target (or just making it
 -- CanQuery = false) keeps the mouse raycast hitting only real terrain/parts.
 RunService.RenderStepped:Connect(function()
-	if removeModeEnabled then
+	if removeModeEnabled or upgradeModeEnabled then
 		local target = mouse.Target
 		local model = target and target:FindFirstAncestorOfClass("Model")
 		if model and OWNED_TOWER_NAMES[model.Name] then
@@ -208,7 +222,7 @@ RunService.RenderStepped:Connect(function()
 				hoveredTowerModel = model
 				if removeHighlight then removeHighlight:Destroy() end
 				removeHighlight = Instance.new("Highlight")
-				removeHighlight.FillColor = Color3.fromRGB(255, 60, 60)
+				removeHighlight.FillColor = if upgradeModeEnabled then Color3.fromRGB(255, 215, 60) else Color3.fromRGB(255, 60, 60)
 				removeHighlight.OutlineColor = Color3.fromRGB(255, 255, 255)
 				removeHighlight.FillTransparency = 0.5
 				removeHighlight.Parent = model
@@ -256,6 +270,11 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		RequestRemoveTower:FireServer(hoveredTowerModel)
 		hoveredTowerModel = nil
 		if removeHighlight then removeHighlight:Destroy(); removeHighlight = nil end
+		return
+	end
+
+	if input.UserInputType == Enum.UserInputType.MouseButton1 and upgradeModeEnabled and hoveredTowerModel then
+		RequestUpgradeTower:FireServer(hoveredTowerModel)
 		return
 	end
 

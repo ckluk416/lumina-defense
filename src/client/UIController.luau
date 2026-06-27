@@ -156,8 +156,24 @@ removeModeBtn.Parent          = screenGui
 Instance.new("UICorner", removeModeBtn).CornerRadius = UDim.new(0, 8)
 
 local removeModeActive = false
+
+local upgradeModeBtn = Instance.new("TextButton")
+upgradeModeBtn.Name            = "UpgradeModeBtn"
+upgradeModeBtn.Size            = UDim2.new(0, 150, 0, 36)
+upgradeModeBtn.Position        = UDim2.new(0, 315, 0, 90)
+upgradeModeBtn.BackgroundColor3= Color3.fromRGB(120, 95, 20)
+upgradeModeBtn.Text            = "⬆ Mode Upgrade"
+upgradeModeBtn.TextColor3      = Color3.fromRGB(255, 255, 255)
+upgradeModeBtn.TextSize        = 14
+upgradeModeBtn.Font            = Enum.Font.GothamBold
+upgradeModeBtn.Parent          = screenGui
+Instance.new("UICorner", upgradeModeBtn).CornerRadius = UDim.new(0, 8)
+
+local upgradeModeActive = false
+
 removeModeBtn.MouseButton1Click:Connect(function()
 	removeModeActive = not removeModeActive
+	if removeModeActive then upgradeModeActive = false; upgradeModeBtn.Text = "⬆ Mode Upgrade"; upgradeModeBtn.BackgroundColor3 = Color3.fromRGB(120, 95, 20) end
 	PlacementSystem.setRemoveModeEnabled(removeModeActive)
 	if removeModeActive then
 		removeModeBtn.Text = "❌ Batal Hapus"
@@ -166,6 +182,20 @@ removeModeBtn.MouseButton1Click:Connect(function()
 	else
 		removeModeBtn.Text = "🗑 Mode Hapus"
 		removeModeBtn.BackgroundColor3 = Color3.fromRGB(120, 30, 30)
+	end
+end)
+
+upgradeModeBtn.MouseButton1Click:Connect(function()
+	upgradeModeActive = not upgradeModeActive
+	if upgradeModeActive then removeModeActive = false; removeModeBtn.Text = "🗑 Mode Hapus"; removeModeBtn.BackgroundColor3 = Color3.fromRGB(120, 30, 30) end
+	PlacementSystem.setUpgradeModeEnabled(upgradeModeActive)
+	if upgradeModeActive then
+		upgradeModeBtn.Text = "❌ Batal Upgrade"
+		upgradeModeBtn.BackgroundColor3 = Color3.fromRGB(200, 160, 40)
+		statusLabel.Text = "⬆ Klik tower untuk upgrade (damage/range naik, biaya bertambah per level)"
+	else
+		upgradeModeBtn.Text = "⬆ Mode Upgrade"
+		upgradeModeBtn.BackgroundColor3 = Color3.fromRGB(120, 95, 20)
 	end
 end)
 
