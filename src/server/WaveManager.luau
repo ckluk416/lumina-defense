@@ -62,8 +62,8 @@ local WAVES = {
 	[7] = {
 		enemies = {
 			{name = "BasicEnemy",  count = 10, spawnDelay = 1.6, routeIndex = 1, speed = 14},
-			{name = "StealthEnemy",count = 5,  spawnDelay = 1.8, routeIndex = 2, speed = 15},
-			{name = "BasicEnemy",  count = 6,  spawnDelay = 1.6, routeIndex = 3, speed = 14},
+			{name = "BasicEnemy",  count = 6,  spawnDelay = 1.6, routeIndex = 2, speed = 14},
+			{name = "BasicEnemy",  count = 5,  spawnDelay = 1.8, routeIndex = 3, speed = 15},
 		},
 	},
 }
@@ -93,6 +93,8 @@ end)
 
 -- Hand-tuned waves 1-7; beyond that, scale up gradually & indefinitely so
 -- a match can run for many days without a hard-coded ceiling.
+-- Route indices are distributed evenly across all generated routes
+-- so no route is left unused regardless of route count (2-4).
 local function getWaveData(waveNum: number)
 	if WAVES[waveNum] then return WAVES[waveNum] end
 
@@ -103,13 +105,53 @@ local function getWaveData(waveNum: number)
 	local speed      = math.min(24, 14 + n * 0.35)
 	local spawnDelay = math.max(0.45, 1.5 - n * 0.025)
 
-	local enemies = {
-		{name = "BasicEnemy", count = basicCount, spawnDelay = spawnDelay, routeIndex = 1, speed = speed},
-		{name = "BasicEnemy", count = math.floor(basicCount * 0.7), spawnDelay = spawnDelay + 0.2, routeIndex = 2, speed = speed},
-	}
+	local numRoutes = math.max(1, #EnvironmentSetup.getRouteIds())
+	local enemies = {}
+
+	-- Primary wave: basic enemies spread across all routes
+	local perRoute = math.floor(basicCount / numRoutes)
+	local extra = basicCount - perRoute * numRoutes
+	for i = 1, numRoutes do
+		local count = perRoute + (i <= extra and 1 or 0)
+		if count > 0 then
+			table.insert(enemies, {name = "BasicEnemy", count = count, spawnDelay = spawnDelay + (i - 1) * 0.1, routeIndex = i, speed = speed})
+		end
+	end
+
+	-- Secondary wave: fewer basic enemies on first half of routes
+	local secondRoutes = math.max(1, math.floor(numRoutes / 2))
+	local secondTotal = math.floor(basicCount * 0.7)
+	local secondPer = math.floor(secondTotal / secondRoutes)
+	for i = 1, secondRoutes do
+		local count = secondPer + (i <= (secondTotal - secondPer * secondRoutes) and 1 or 0)
+		if count > 0 then
+			table.insert(enemies, {name = "BasicEnemy", count = count, spawnDelay = spawnDelay + 0.3 + (i - 1) * 0.1, routeIndex = i, speed = speed})
+		end
+	end
+
 	if isNight then
-		local stealthCount = math.min(14, 4 + math.floor(n * 0.6))
-		table.insert(enemies, {name = "StealthEnemy", count = stealthCount, spawnDelay = spawnDelay + 0.3, routeIndex = 3, speed = speed + 1})
+		local stealthTotal = math.min(14, 4 + math.floor(n * 0.6))
+		-- Berapa banyak route yang kena stealth: 1 di awal, semua route di wave tinggi
+		local stealthRoutes = math.max(1, math.min(numRoutes, 1 + math.floor(n * 0.4)))
+		-- Pilih route secara random tanpa duplikat
+		local picked: {number} = {}
+		local pool = {}
+		for i = 1, numRoutes do pool[i] = i end
+		for _ = 1, stealthRoutes do
+			local idx = math.random(1, #pool)
+			table.insert(picked, pool[idx])
+			table.remove(pool, idx)
+		end
+		table.sort(picked)
+		-- Distribusi stealthTotal ke route terpilih
+		local perRoute = math.floor(stealthTotal / stealthRoutes)
+		local extra = stealthTotal - perRoute * stealthRoutes
+		for ri, routeIdx in ipairs(picked) do
+			local count = perRoute + (ri <= extra and 1 or 0)
+			if count > 0 then
+				table.insert(enemies, {name = "StealthEnemy", count = count, spawnDelay = spawnDelay + 0.5 + (ri - 1) * 0.15, routeIndex = routeIdx, speed = speed + 1})
+			end
+		end
 	end
 
 	return {enemies = enemies}
