@@ -310,6 +310,31 @@ function WaveManager.beginMatch()
 	end)
 end
 
+function WaveManager.getCurrentWave(): number
+	return currentWave
+end
+
+function WaveManager.getStatus(): WaveStatus
+	return status
+end
+
+function WaveManager.getMaxBaseHP(): number
+	return MAX_BASE_HP
+end
+
+function WaveManager.getState(): {currentWave: number, status: WaveStatus, baseHP: number, maxBaseHP: number, basicKills: number, stealthKills: number, remaining: number, total: number}
+	return {
+		currentWave = currentWave,
+		status = status,
+		baseHP = baseHP,
+		maxBaseHP = MAX_BASE_HP,
+		basicKills = basicKills,
+		stealthKills = stealthKills,
+		remaining = remainingThisWave,
+		total = totalThisWave,
+	}
+end
+
 RequestStartWave.OnServerEvent:Connect(function(player: Player)
 	WaveManager.onPlayerRequestStart(player)
 end)

@@ -12,6 +12,7 @@ local RequestPlacement = RemoteEvents:WaitForChild("RequestPlacement") :: Remote
 local RequestRemoveTower = RemoteEvents:WaitForChild("RequestRemoveTower") :: RemoteEvent
 local RequestUpgradeTower = RemoteEvents:WaitForChild("RequestUpgradeTower") :: RemoteEvent
 local Assets           = ReplicatedStorage:WaitForChild("Assets")
+local TowerAttack      = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("TowerAttack"))
 
 local player = Players.LocalPlayer
 local mouse  = player:GetMouse()
@@ -38,6 +39,11 @@ local upgradeModeEnabled = false
 
 local removeHighlight: Highlight? = nil
 local hoveredTowerModel: Model? = nil
+local upgradeTooltip: BillboardGui? = nil
+
+local upgradeCurRangeRing: Part? = nil
+local upgradeNextRangeRing: Part? = nil
+local upgradeTooltip: BillboardGui? = nil
 
 local function clearRangeIndicator()
 	if rangeIndicator then
@@ -48,6 +54,47 @@ local function clearRangeIndicator()
 		innerRangeIndicator:Destroy()
 		innerRangeIndicator = nil
 	end
+end
+
+local function clearUpgradeRangeRings()
+	if upgradeCurRangeRing then upgradeCurRangeRing:Destroy(); upgradeCurRangeRing = nil end
+	if upgradeNextRangeRing then upgradeNextRangeRing:Destroy(); upgradeNextRangeRing = nil end
+end
+
+local function updateUpgradeRangeRings(position: Vector3, curRange: number, nextRange: number)
+	if not upgradeCurRangeRing then
+		upgradeCurRangeRing = Instance.new("Part")
+		upgradeCurRangeRing.Name = "UpgradeCurRange"
+		upgradeCurRangeRing.Shape = Enum.PartType.Cylinder
+		upgradeCurRangeRing.Anchored = true
+		upgradeCurRangeRing.CanCollide = false
+		upgradeCurRangeRing.CanQuery = false
+		upgradeCurRangeRing.CastShadow = false
+		upgradeCurRangeRing.Material = Enum.Material.Neon
+		upgradeCurRangeRing.Color = Color3.fromRGB(100, 180, 255)
+		upgradeCurRangeRing.Transparency = 0.55
+		upgradeCurRangeRing.Parent = Workspace
+	end
+	local curDiam = curRange * 2
+	upgradeCurRangeRing.Size = Vector3.new(0.14, curDiam, curDiam)
+	upgradeCurRangeRing.CFrame = CFrame.new(position) * CFrame.Angles(0, 0, math.rad(90))
+
+	if not upgradeNextRangeRing then
+		upgradeNextRangeRing = Instance.new("Part")
+		upgradeNextRangeRing.Name = "UpgradeNextRange"
+		upgradeNextRangeRing.Shape = Enum.PartType.Cylinder
+		upgradeNextRangeRing.Anchored = true
+		upgradeNextRangeRing.CanCollide = false
+		upgradeNextRangeRing.CanQuery = false
+		upgradeNextRangeRing.CastShadow = false
+		upgradeNextRangeRing.Material = Enum.Material.Neon
+		upgradeNextRangeRing.Color = Color3.fromRGB(255, 215, 60)
+		upgradeNextRangeRing.Transparency = 0.50
+		upgradeNextRangeRing.Parent = Workspace
+	end
+	local nextDiam = nextRange * 2
+	upgradeNextRangeRing.Size = Vector3.new(0.14, nextDiam, nextDiam)
+	upgradeNextRangeRing.CFrame = CFrame.new(position) * CFrame.Angles(0, 0, math.rad(90))
 end
 
 local function updateInnerRangeIndicator(position: Vector3, innerRange: number)
@@ -77,12 +124,12 @@ local function updateRangeIndicator(position: Vector3, range: number)
 		rangeIndicator.Anchored    = true
 		rangeIndicator.CanCollide  = false
 		rangeIndicator.CanQuery    = false -- CRITICAL: excludes this part from mouse raycasts
-		                                    -- entirely. Without this, mouse.Hit could land on
-		                                    -- the disc itself next frame (TargetFilter only
-		                                    -- excludes ONE instance -- currentPreview -- not
-		                                    -- this disc), nudging the computed ground height
-		                                    -- upward every frame and making the preview drift
-		                                    -- skyward the longer the mouse stayed still.
+		-- entirely. Without this, mouse.Hit could land on
+		-- the disc itself next frame (TargetFilter only
+		-- excludes ONE instance -- currentPreview -- not
+		-- this disc), nudging the computed ground height
+		-- upward every frame and making the preview drift
+		-- skyward the longer the mouse stayed still.
 		rangeIndicator.CastShadow  = false
 		rangeIndicator.Material    = Enum.Material.Neon
 		rangeIndicator.Color       = Color3.fromRGB(255, 255, 255)
@@ -100,9 +147,9 @@ local function setupPreviewModel(model: Model)
 			desc.Transparency = 0.5
 			desc.CanCollide   = false
 			desc.CanQuery     = false -- belt-and-suspenders alongside mouse.TargetFilter:
-			                          -- ensures the preview itself can never be hit by the
-			                          -- placement raycast, even if TargetFilter is reset
-			                          -- or fails to apply for any reason.
+			-- ensures the preview itself can never be hit by the
+			-- placement raycast, even if TargetFilter is reset
+			-- or fails to apply for any reason.
 			desc.CastShadow   = false
 			desc.Anchored     = true
 		end
@@ -153,6 +200,7 @@ function PlacementSystem.setRemoveModeEnabled(enabled: boolean)
 		PlacementSystem.cancelPlacement()
 	else
 		if removeHighlight then removeHighlight:Destroy(); removeHighlight = nil end
+		if upgradeTooltip then upgradeTooltip:Destroy(); upgradeTooltip = nil end
 		hoveredTowerModel = nil
 	end
 end
@@ -164,6 +212,8 @@ function PlacementSystem.setUpgradeModeEnabled(enabled: boolean)
 		PlacementSystem.cancelPlacement()
 	else
 		if removeHighlight then removeHighlight:Destroy(); removeHighlight = nil end
+		if upgradeTooltip then upgradeTooltip:Destroy(); upgradeTooltip = nil end
+		clearUpgradeRangeRings()
 		hoveredTowerModel = nil
 	end
 end
@@ -181,6 +231,7 @@ function PlacementSystem.cancelPlacement()
 		currentPreview = nil
 	end
 	clearRangeIndicator()
+	clearUpgradeRangeRings()
 end
 
 function PlacementSystem.startPlacement(towerName: string)
@@ -230,6 +281,78 @@ RunService.RenderStepped:Connect(function()
 		else
 			hoveredTowerModel = nil
 			if removeHighlight then removeHighlight:Destroy(); removeHighlight = nil end
+		end
+		if upgradeModeEnabled then
+			if hoveredTowerModel then
+				local levelVal = hoveredTowerModel:FindFirstChild("TowerLevel") :: IntValue?
+				local pos = hoveredTowerModel:GetPivot().Position
+				if levelVal and levelVal.Value < TowerAttack.MAX_TOWER_LEVEL then
+					local preview = TowerAttack.getUpgradePreview(hoveredTowerModel.Name, levelVal.Value)
+					if preview and preview.next then
+						if not upgradeTooltip then
+							local anchor = hoveredTowerModel.PrimaryPart or hoveredTowerModel:FindFirstChildOfClass("BasePart")
+							if anchor then
+								local billboard = Instance.new("BillboardGui")
+								billboard.Name = "UpgradeTooltip"
+								billboard.Size = UDim2.new(0, 140, 0, 60)
+								billboard.StudsOffset = Vector3.new(0, 8, 0)
+								billboard.Adornee = anchor
+								billboard.AlwaysOnTop = true
+								billboard.Parent = hoveredTowerModel
+								local lines = {"⬆ " .. hoveredTowerModel.Name .. " Lv." .. levelVal.Value .. "→" .. (levelVal.Value + 1)}
+								local c, n = preview.current, preview.next
+								if c.damage then table.insert(lines, "Dmg: " .. c.damage .. "→" .. n.damage) end
+								if c.range then table.insert(lines, "Rng: " .. math.floor(c.range) .. "→" .. math.floor(n.range)) end
+								if c.fireRate then table.insert(lines, "Spd: " .. string.format("%.2f", c.fireRate) .. "→" .. string.format("%.2f", n.fireRate) .. "s") end
+								table.insert(lines, "💰 $" .. preview.cost)
+								local label = Instance.new("TextLabel")
+								label.Size = UDim2.new(1, 0, 1, 0)
+								label.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+								label.BackgroundTransparency = 0.15
+								label.TextColor3 = Color3.fromRGB(255, 255, 200)
+								label.Font = Enum.Font.GothamMedium
+								label.TextSize = 13
+								label.Text = table.concat(lines, "\n")
+								label.TextWrapped = true
+								label.Parent = billboard
+								upgradeTooltip = billboard
+							end
+						end
+						if preview.current.range and preview.next.range then
+							updateUpgradeRangeRings(Vector3.new(pos.X, pos.Y + 0.15, pos.Z), preview.current.range, preview.next.range)
+						else
+							clearUpgradeRangeRings()
+						end
+					end
+				elseif levelVal and levelVal.Value >= TowerAttack.MAX_TOWER_LEVEL then
+					if not upgradeTooltip then
+						local anchor = hoveredTowerModel.PrimaryPart or hoveredTowerModel:FindFirstChildOfClass("BasePart")
+						if anchor then
+							local billboard = Instance.new("BillboardGui")
+							billboard.Name = "UpgradeTooltip"
+							billboard.Size = UDim2.new(0, 120, 0, 24)
+							billboard.StudsOffset = Vector3.new(0, 8, 0)
+							billboard.Adornee = anchor
+							billboard.AlwaysOnTop = true
+							billboard.Parent = hoveredTowerModel
+							local label = Instance.new("TextLabel")
+							label.Size = UDim2.new(1, 0, 1, 0)
+							label.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+							label.BackgroundTransparency = 0.15
+							label.TextColor3 = Color3.fromRGB(255, 220, 50)
+							label.Font = Enum.Font.GothamBold
+							label.TextSize = 14
+							label.Text = "✅ MAX Lv." .. levelVal.Value
+							label.Parent = billboard
+							upgradeTooltip = billboard
+						end
+					end
+					clearUpgradeRangeRings()
+				end
+			else
+				if upgradeTooltip then upgradeTooltip:Destroy(); upgradeTooltip = nil end
+				clearUpgradeRangeRings()
+			end
 		end
 		return
 	end

@@ -57,10 +57,19 @@ end
 local function createLevelBadge(model: Model, level: number, towerName: string)
 	local anchor = model.PrimaryPart or model:FindFirstChildOfClass("BasePart")
 	if not anchor then return end
+	local highestY = -math.huge
+	for _, p in ipairs(model:GetDescendants()) do
+		if p:IsA("BasePart") then
+			local top = p.Position.Y + p.Size.Y / 2
+			if top > highestY then highestY = top end
+		end
+	end
+	local offsetY = if highestY > -math.huge then (highestY - anchor.Position.Y) + 4 else 6
+
 	local billboard = Instance.new("BillboardGui")
 	billboard.Name = "LevelBadge"
 	billboard.Size = UDim2.new(0, 110, 0, 22)
-	billboard.StudsOffset = Vector3.new(0, 6, 0)
+	billboard.StudsOffset = Vector3.new(0, offsetY, 0)
 	billboard.Adornee = anchor
 	billboard.Parent = model
 	local label = Instance.new("TextLabel")
@@ -72,7 +81,6 @@ local function createLevelBadge(model: Model, level: number, towerName: string)
 	label.Font = Enum.Font.GothamBold
 	label.TextSize = 14
 	label.Parent = billboard
-
 	if level >= MAX_TOWER_LEVEL then
 		label.Text = "Lv." .. level .. " (MAX)"
 	else
@@ -121,7 +129,7 @@ local function placeModel(original: Model, position: Vector3): Model
 		position.X - center.X,
 		position.Y - lowestY,
 		position.Z - center.Z
-	))
+		))
 
 	for _, p in ipairs(newModel:GetDescendants()) do
 		if p:IsA("BasePart") then p.Anchored = true end
@@ -166,6 +174,10 @@ RequestPlacement.OnServerEvent:Connect(function(player: Player, towerName, posit
 	local uid = player.UserId
 	if not placedTowers[uid] then placedTowers[uid] = {} end
 	table.insert(placedTowers[uid], {model = newTower, position = position, towerName = towerName, level = 1})
+	local levelVal = Instance.new("IntValue")
+	levelVal.Name = "TowerLevel"
+	levelVal.Value = 1
+	levelVal.Parent = newTower
 	towerOwner[newTower] = player
 
 	local UpdateMoney      = RemoteEvents:FindFirstChild("UpdateMoney")      :: RemoteEvent
@@ -250,6 +262,14 @@ RequestUpgradeTower.OnServerEvent:Connect(function(player: Player, model)
 	end
 	targetEntry.level = newLevel
 
+	if targetEntry.towerName == "LightNode_Roblox" then
+		local VisualEffects = require(script.Parent:WaitForChild("VisualEffects"))
+		VisualEffects.upgradeLightNode(model, newLevel)
+	end
+
+	local levelVal = model:FindFirstChild("TowerLevel") :: IntValue?
+	if levelVal then levelVal.Value = newLevel end
+
 	local badge = model:FindFirstChild("LevelBadge")
 	local label = badge and badge:FindFirstChild("LevelText") :: TextLabel?
 	if label then
@@ -291,6 +311,14 @@ end)
 
 function PlacementHandler.getMaxTowers(): number
 	return MAX_TOWERS_PER_PLAYER
+end
+
+function PlacementHandler.getPlayerTowerCount(player: Player): number
+	return placedTowers[player.UserId] and #placedTowers[player.UserId] or 0
+end
+
+function PlacementHandler.getMaxTowersForPlayer(player: Player): number
+	return MAX_TOWERS_PER_PLAYER + (extraSlots[player.UserId] or 0)
 end
 
 return PlacementHandler

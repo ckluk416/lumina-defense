@@ -48,7 +48,7 @@ function VisualEffects.setupBaseRings(baseModel: Model)
 	end
 end
 
--- Sets up the 3 energy rings on a LightNode model (Orb_EnergyRing_0..2).
+-- Sets up the 3 energy rings + PointLight on a LightNode model.
 function VisualEffects.setupLightNodeRings(nodeModel: Model)
 	local ring0 = nodeModel:FindFirstChild("Orb_EnergyRing_0")
 	local ring1 = nodeModel:FindFirstChild("Orb_EnergyRing_1")
@@ -62,6 +62,60 @@ function VisualEffects.setupLightNodeRings(nodeModel: Model)
 	end
 	if ring2 and ring2:IsA("BasePart") then
 		registerSpin(ring2, Vector3.zAxis, 36)
+	end
+
+	-- Add PointLight for actual area illumination
+	local core = nodeModel:FindFirstChildOfClass("BasePart")
+	if core and not core:FindFirstChild("NodeLight") then
+		local light = Instance.new("PointLight")
+		light.Name = "NodeLight"
+		light.Range = 25
+		light.Brightness = 0.5
+		light.Color = Color3.fromRGB(255, 220, 60)
+		light.Shadows = false
+		light.Parent = core
+	end
+end
+
+local LIGHTNODE_RANGE = {25, 28, 31}
+local LIGHTNODE_BRIGHTNESS = {0.5, 0.7, 1}
+
+function VisualEffects.upgradeLightNode(nodeModel: Model, newLevel: number)
+	local idx = math.clamp(newLevel, 1, 3)
+	local targetRange = LIGHTNODE_RANGE[idx]
+	local targetBrightness = LIGHTNODE_BRIGHTNESS[idx]
+	local targetColor = if newLevel >= 3 then Color3.fromRGB(255, 255, 255) else Color3.fromRGB(255, 220, 60)
+
+	-- Scale PointLight
+	local core = nodeModel:FindFirstChildOfClass("BasePart")
+	if core then
+		local light = core:FindFirstChild("NodeLight") :: PointLight?
+		if not light then
+			light = Instance.new("PointLight")
+			light.Name = "NodeLight"
+			light.Shadows = false
+			light.Parent = core
+		end
+		light.Range = targetRange
+		light.Brightness = targetBrightness
+		light.Color = targetColor
+	end
+
+	-- Scale energy rings
+	for i = 0, 2 do
+		local ring = nodeModel:FindFirstChild("Orb_EnergyRing_" .. i)
+		if ring and ring:IsA("BasePart") then
+			local baseSize = ring.Size
+			local scale = 1.0 + (newLevel - 1) * 0.12
+			ring.Size = baseSize * scale
+		end
+	end
+
+	-- Brighten core
+	if core then
+		core.Transparency = 0.5 - (newLevel - 1) * 0.15
+		core.Color = targetColor
+		core.Material = Enum.Material.Neon
 	end
 end
 

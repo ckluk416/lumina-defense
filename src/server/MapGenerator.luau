@@ -149,7 +149,7 @@ local function buildWaypoints(spawnPos: Vector3, basePos: Vector3, waypointCount
 		local insertPos = math.max(1, math.floor(#waypoints * 0.6))
 		table.insert(waypoints, insertPos + 1, Vector3.new(
 			detourPoint.X + detourOffset.X, WAYPOINT_Y, detourPoint.Z + detourOffset.Z
-		))
+			))
 	end
 
 	table.insert(waypoints, Vector3.new(basePos.X, WAYPOINT_Y, basePos.Z))
@@ -285,153 +285,320 @@ local function layRouteFootpath(waypoints: {Vector3}, footpathFolder: Instance)
 	joint.Parent = footpathFolder
 end
 
--- ===== Natural Decoration (trees + rocks) =====
--- Fully natural/fantasy theme: low-poly procedural trees and rock clusters
--- scattered near each route, offset enough to frame the path without
--- blocking it.
+-- ===== Natural Decoration (model-based) =====
+-- Trees, rocks, and trunks cloned from pre-made models in
+-- ReplicatedStorage.Assets. Item type and density vary with
+-- radial distance from the base (center): small items near
+-- combat, full forest near the mountain walls.
 
-local DECORATION_MIN_OFFSET = 11   -- min distance from the path centerline (clears the footpath width)
-local DECORATION_MAX_OFFSET = 26  -- max distance from the path centerline
-local DECORATION_CHANCE_PER_SEGMENT = 0.6 -- probability of decor per path segment, per side
+-- Helper: clone a model from Assets, position it so its lowest
+-- point sits at GROUND_LEVEL, random Y rotation, optional scale.
+local function placeModel(template: Instance, position: Vector3, parent: Instance, scale: number?)
+	local clone = template:Clone()
+	clone.Parent = parent
 
-local TRUNK_COLORS = {
-	Color3.fromRGB(92, 64, 42),
-	Color3.fromRGB(74, 52, 36),
-}
+	local rotY = math.random(0, 359)
+	clone:PivotTo(CFrame.new(position) * CFrame.Angles(0, math.rad(rotY), 0))
 
-local LEAF_COLORS = {
-	Color3.fromRGB(58, 102, 48),
-	Color3.fromRGB(70, 118, 56),
-	Color3.fromRGB(48, 90, 42),
-}
+	if scale and scale ~= 1 then
+		if clone:IsA("Model") then
+			clone:ScaleTo(scale)
+		else
+			for _, part in ipairs(clone:GetDescendants()) do
+				if part:IsA("BasePart") then
+					part.Size = Vector3.new(part.Size.X * scale, part.Size.Y * scale, part.Size.Z * scale)
+				end
+			end
+		end
+	end
 
--- Simple low-poly tree: cylinder trunk + a stacked "canopy" of spheres.
-local function createTree(position: Vector3, parent: Instance)
-	local trunkHeight = 5 + math.random() * 3
-	local trunkRadius = 0.6 + math.random() * 0.3
+	-- Snap lowest point to GROUND_LEVEL so models sit on terrain
+	local lowestY = math.huge
+	if clone:IsA("BasePart") then
+		lowestY = math.min(lowestY, clone.Position.Y - clone.Size.Y / 2)
+	end
+	for _, part in ipairs(clone:GetDescendants()) do
+		if part:IsA("BasePart") then
+			local bottom = part.Position.Y - part.Size.Y / 2
+			if bottom < lowestY then lowestY = bottom end
+		end
+	end
+	if lowestY ~= math.huge and lowestY ~= GROUND_LEVEL then
+		local pivot = clone:GetPivot()
+		clone:PivotTo(pivot + Vector3.new(0, GROUND_LEVEL - lowestY, 0))
+	end
 
-	local trunk = Instance.new("Part")
-	trunk.Name = "TreeTrunk"
-	trunk.Shape = Enum.PartType.Cylinder
-	trunk.Size = Vector3.new(trunkHeight, trunkRadius * 2, trunkRadius * 2)
-	-- Cylinder's default orientation has its length along X; rotate so it stands upright along Y.
-	trunk.CFrame = CFrame.new(position + Vector3.new(0, trunkHeight / 2, 0)) * CFrame.Angles(0, 0, math.rad(90))
-	trunk.Anchored = true
-	trunk.CanCollide = false
-	trunk.Material = Enum.Material.Wood
-	trunk.Color = TRUNK_COLORS[math.random(1, #TRUNK_COLORS)]
-	trunk.Parent = parent
-
-	local canopyColor = LEAF_COLORS[math.random(1, #LEAF_COLORS)]
-	local canopyBaseY = position.Y + trunkHeight * 0.75
-	local canopyLayers = math.random(2, 3)
-	for layer = 1, canopyLayers do
-		local layerSize = (3.2 - (layer - 1) * 0.6) + math.random() * 0.6
-		local leaf = Instance.new("Part")
-		leaf.Name = "TreeCanopy"
-		leaf.Shape = Enum.PartType.Ball
-		leaf.Size = Vector3.new(layerSize, layerSize * 0.85, layerSize)
-		leaf.Position = position + Vector3.new(0, canopyBaseY - position.Y + (layer - 1) * (layerSize * 0.55), 0)
-		leaf.Anchored = true
-		leaf.CanCollide = false
-		leaf.Material = Enum.Material.Grass
-		leaf.Color = canopyColor
-		leaf.Parent = parent
+	if clone:IsA("BasePart") then
+		clone.Anchored = true
+		clone.CanCollide = false
+	end
+	for _, part in ipairs(clone:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part.Anchored = true
+			part.CanCollide = false
+		end
 	end
 end
 
--- Chunky natural rock cluster. Slightly bigger and more varied than the
--- engine's own ambient terrain rocks, with a touch of random tilt so the
--- cluster doesn't look like uniform stacked spheres.
-local ROCK_COLORS = {
-	Color3.fromRGB(132, 124, 116),
-	Color3.fromRGB(96, 90, 84),
-	Color3.fromRGB(150, 140, 128),
-}
+local function randomFrom(folderName: string): Instance?
+	local folder = Assets:FindFirstChild(folderName)
+	if not folder then return nil end
+	local children = folder:GetChildren()
+	if #children == 0 then return nil end
+	return children[math.random(1, #children)]
+end
 
-local function createRockCluster(position: Vector3, parent: Instance)
-	local rockCount = math.random(2, 4)
-	for i = 1, rockCount do
-		local size = 2.5 + math.random() * 3.5
-		local rock = Instance.new("Part")
-		rock.Name = "RockDecor"
-		rock.Shape = Enum.PartType.Ball
-		rock.Size = Vector3.new(size, size * 0.8, size)
-		local jitter = Vector3.new((math.random() * 2 - 1) * 3, 0, (math.random() * 2 - 1) * 3)
-		rock.CFrame = CFrame.new(position + jitter + Vector3.new(0, size * 0.4, 0))
-			* CFrame.Angles(0, math.rad(math.random(0, 359)), math.rad(math.random(-8, 8)))
-		rock.Anchored = true
-		rock.CanCollide = false
-		rock.Material = Enum.Material.Rock
-		rock.Color = ROCK_COLORS[math.random(1, #ROCK_COLORS)]
-		rock.Parent = parent
+local function createTree(position: Vector3, parent: Instance, sizeMult: number?)
+	local template = randomFrom("TreeModels")
+	if template then
+		local baseScale = 0.8 + math.random() * 0.4
+		placeModel(template, position, parent, baseScale * (sizeMult or 1))
 	end
 end
 
--- Scatters decoration along a route's waypoints, offset to either side so
--- it frames the path without obstructing it.
-local function decorateRoute(waypoints: {Vector3}, decorationFolder: Instance)
+local function createRockCluster(position: Vector3, parent: Instance, folderName: string, sizeMult: number?)
+	local folder = Assets:FindFirstChild(folderName)
+	if not folder then return end
+	local templates = folder:GetChildren()
+	if #templates == 0 then return end
+
+	local count = 1 + math.random(0, 2)
+	for _ = 1, count do
+		local template = templates[math.random(1, #templates)]
+		local jitter = Vector3.new(
+			(math.random() * 2 - 1) * 3,
+			0,
+			(math.random() * 2 - 1) * 3
+		)
+		local baseScale = 0.6 + math.random() * 0.5
+		placeModel(template, position + jitter, parent, baseScale * (sizeMult or 1))
+	end
+end
+
+-- Decoration along each route segment. Item type is chosen by
+-- radial distance from base centre: small items near combat,
+-- full variety toward the outer map.
+--
+-- Exclusion rules (to stop models blocking combat areas):
+--   BASE_EXCLUSION_RADIUS  : nothing within this radius of Base (0,0,0)
+--   PORTAL_EXCLUSION_RADIUS: nothing within this radius of any portal/spawn
+--   PATH_SIDE_MIN_OFFSET   : minimum lateral distance from the path centreline
+--   MIN_ITEM_SPACING       : minimum distance between any two placed items
+local BASE_EXCLUSION_RADIUS   = 28  -- studs; keeps Base platform clear
+local PORTAL_EXCLUSION_RADIUS = 22  -- studs; keeps each portal entrance clear
+local PATH_SIDE_MIN_OFFSET    = 14  -- studs from path centreline (footpath is 7 wide, so ~7.5 gap minimum)
+local MIN_ITEM_SPACING        = 8   -- studs; prevents two items spawning on top of each other
+
+-- Shared list of placed-item positions (reset each generate() call via decorationFolder reuse)
+local placedItemPositions: {Vector3} = {}
+
+local function isTooCloseToPlaced(pos: Vector3): boolean
+	for _, p in ipairs(placedItemPositions) do
+		local dx = pos.X - p.X
+		local dz = pos.Z - p.Z
+		if dx*dx + dz*dz < MIN_ITEM_SPACING * MIN_ITEM_SPACING then
+			return true
+		end
+	end
+	return false
+end
+
+local function isTooCloseToPortals(pos: Vector3, allWaypoints: {Vector3}): boolean
+	-- The first waypoint of every route IS the portal/spawn position
+	-- (passed in via the full allWaypoints list from generate())
+	for _, wp in ipairs(allWaypoints) do
+		local dx = pos.X - wp.X
+		local dz = pos.Z - wp.Z
+		if dx*dx + dz*dz < PORTAL_EXCLUSION_RADIUS * PORTAL_EXCLUSION_RADIUS then
+			return true
+		end
+	end
+	return false
+end
+
+local function tryPlaceDecoration(pos: Vector3, decorationFolder: Instance, distFromCenter: number, allWaypoints: {Vector3})
+	local bx, bz = pos.X - BASE_POSITION.X, pos.Z - BASE_POSITION.Z
+	if bx*bx + bz*bz < BASE_EXCLUSION_RADIUS * BASE_EXCLUSION_RADIUS then return end
+	if isTooCloseToPortals(pos, allWaypoints) then return end
+	if isTooCloseToPlaced(pos) then return end
+
+	table.insert(placedItemPositions, pos)
+
+	-- Smooth gradient from base to outer wall
+	-- t = 0 near base edge (dist≈28), t = 1 near mountain wall (dist≈190)
+	local t = math.max(0, math.min(1, (distFromCenter - 28) / 162))
+	local sizeMult = 0.5 + t * 0.7
+
+	if math.random() < t * 0.65 then
+		createTree(pos, decorationFolder, sizeMult)
+	else
+		createRockCluster(pos, decorationFolder, "RockModels", sizeMult)
+	end
+end
+
+local function decorateRoute(waypoints: {Vector3}, decorationFolder: Instance, allWaypoints: {Vector3})
 	for i = 1, #waypoints - 1 do
 		local fromPoint = waypoints[i]
 		local toPoint = waypoints[i + 1]
 		local segmentDir = (toPoint - fromPoint)
 		if segmentDir.Magnitude < 0.01 then continue end
 
-		local forward = segmentDir.Unit
-		local perpendicular = Vector3.new(-forward.Z, 0, forward.X)
-		local midpoint = fromPoint + segmentDir * 0.5
+		local fwd = segmentDir.Unit
+		local perp = Vector3.new(-fwd.Z, 0, fwd.X)
 
 		for _, side in ipairs({-1, 1}) do
-			if math.random() <= DECORATION_CHANCE_PER_SEGMENT then
-				local offsetDist = DECORATION_MIN_OFFSET + math.random() * (DECORATION_MAX_OFFSET - DECORATION_MIN_OFFSET)
-				local decorPos = midpoint + perpendicular * (offsetDist * side)
-				decorPos = Vector3.new(decorPos.X, GROUND_LEVEL, decorPos.Z)
+			local offsetDist = PATH_SIDE_MIN_OFFSET + math.random() * 30
+			local t = math.random()
+			local pos = fromPoint + fwd * (segmentDir.Magnitude * t) + perp * (offsetDist * side)
+			pos = Vector3.new(pos.X, GROUND_LEVEL, pos.Z)
 
-				-- Mix of trees and rocks, roughly half and half
-				if math.random() < 0.5 then
-					createTree(decorPos, decorationFolder)
-				else
-					createRockCluster(decorPos, decorationFolder)
-				end
+			local distFromCenter = math.sqrt(pos.X * pos.X + pos.Z * pos.Z)
+			-- Density scales with distance from base: ~52% at dist=50 → ~90% at dist=150+
+			local chance = 0.4 + distFromCenter / 240
+			if math.random() <= math.min(0.9, chance) then
+				tryPlaceDecoration(pos, decorationFolder, distFromCenter, allWaypoints)
 			end
 		end
+		task.wait() -- yield once per route segment so this never blocks a full frame
 	end
 end
 
--- ===== Perimeter Wall =====
--- A ring of chunky stone/earth blocks around the playable area, so the map
--- feels enclosed instead of fading into open grass forever.
+-- Fills the outer ring (between routes and mountain walls) with
+-- dense forest so the map doesn't feel empty past the paths.
+-- Density and item size increase as radius approaches the mountain walls.
+local function decorateOuterArea(decorationFolder: Instance, allWaypoints: {Vector3})
+	local OUTER_COUNT = 100
+	local MIN_RADIUS = 60
+	local MAX_RADIUS = 190
+	local PATH_CLEARANCE = 14
 
-local WALL_RADIUS = 205 -- pushed out a bit further since portals can now spawn up to radius 160
-local WALL_SEGMENT_WIDTH = 10
-local WALL_HEIGHT_MIN = 8
-local WALL_HEIGHT_MAX = 14
-local WALL_MATERIAL = Enum.Material.Rock
-local WALL_COLOR = Color3.fromRGB(110, 102, 92)
-
-local function buildPerimeterWall(wallFolder: Instance)
-	local circumference = 2 * math.pi * WALL_RADIUS
-	local segmentCount = math.floor(circumference / WALL_SEGMENT_WIDTH)
-
-	for i = 1, segmentCount do
-		local angle = (i / segmentCount) * 360
-		local angleRad = math.rad(angle)
+	for i = 1, OUTER_COUNT do
+		local angle = math.random() * 2 * math.pi
+		-- Bias toward outer wall: ~70% of items end up at radius ≥ 125
+		local radius = MIN_RADIUS + (MAX_RADIUS - MIN_RADIUS) * math.random() ^ 0.5
 		local pos = Vector3.new(
-			BASE_POSITION.X + math.cos(angleRad) * WALL_RADIUS,
+			math.cos(angle) * radius,
 			GROUND_LEVEL,
-			BASE_POSITION.Z + math.sin(angleRad) * WALL_RADIUS
+			math.sin(angle) * radius
 		)
 
-		local height = WALL_HEIGHT_MIN + math.random() * (WALL_HEIGHT_MAX - WALL_HEIGHT_MIN)
-		local segment = Instance.new("Part")
-		segment.Name = "WallSegment"
-		segment.Size = Vector3.new(WALL_SEGMENT_WIDTH * 1.05, height, 6) -- slight overlap so there are no visible gaps
-		segment.CFrame = CFrame.new(pos + Vector3.new(0, height / 2, 0)) * CFrame.Angles(0, -angleRad, 0)
-		segment.Anchored = true
-		segment.CanCollide = true
-		segment.Material = WALL_MATERIAL
-		segment.Color = WALL_COLOR
-		segment.Parent = wallFolder
+		local tooClose = false
+		for _, wp in ipairs(allWaypoints) do
+			local dx = pos.X - wp.X
+			local dz = pos.Z - wp.Z
+			if dx * dx + dz * dz < PATH_CLEARANCE * PATH_CLEARANCE then
+				tooClose = true
+				break
+			end
+		end
+
+		local bx, bz = pos.X - BASE_POSITION.X, pos.Z - BASE_POSITION.Z
+		local tooCloseToBase = bx*bx + bz*bz < BASE_EXCLUSION_RADIUS * BASE_EXCLUSION_RADIUS
+
+		if not tooClose and not tooCloseToBase and not isTooCloseToPlaced(pos) then
+			table.insert(placedItemPositions, pos)
+			local outerT = (radius - MIN_RADIUS) / (MAX_RADIUS - MIN_RADIUS)
+			local sizeMult = 0.7 + outerT * 0.6
+			if math.random() < 0.25 + outerT * 0.50 then
+				createTree(pos, decorationFolder, sizeMult)
+			else
+				createRockCluster(pos, decorationFolder, "RockModels", sizeMult)
+			end
+
+			-- Natural clustering: extra items near this position
+			if math.random() < 0.3 + outerT * 0.3 then
+				local count = math.random(1, 2)
+				for _ = 1, count do
+					local a = math.random() * 2 * math.pi
+					local d = 8 + math.random() * 6
+					local cp = pos + Vector3.new(math.cos(a) * d, 0, math.sin(a) * d)
+					if isTooCloseToPlaced(cp) then continue end
+					if isTooCloseToPortals(cp, allWaypoints) then continue end
+					table.insert(placedItemPositions, cp)
+					if math.random() < 0.6 then
+						createTree(cp, decorationFolder, sizeMult * (0.8 + math.random() * 0.4))
+					else
+						createRockCluster(cp, decorationFolder, "RockModels", sizeMult * 0.8)
+					end
+				end
+			end
+		end
+		if i % 8 == 0 then task.wait() end
+	end
+end
+
+-- ===== Mountain Wall Ring =====
+-- Three concentric rings forming a mountain range that encloses the
+-- playable area. Heights use sine-wave + jitter for a natural skyline.
+local MOUNTAIN_RINGS = {
+	{
+		radius = 205,
+		heightMin = 20, heightMax = 35,
+		segWidth = 12, segThickness = 8,
+		colors = {
+			Color3.fromRGB(110, 102, 92),
+			Color3.fromRGB(100, 92, 84),
+		},
+	},
+	{
+		radius = 222,
+		heightMin = 35, heightMax = 55,
+		segWidth = 14, segThickness = 10,
+		colors = {
+			Color3.fromRGB(90, 82, 74),
+			Color3.fromRGB(78, 72, 66),
+		},
+	},
+	{
+		radius = 242,
+		heightMin = 45, heightMax = 70,
+		segWidth = 16, segThickness = 12,
+		colors = {
+			Color3.fromRGB(70, 64, 58),
+			Color3.fromRGB(58, 52, 48),
+		},
+	},
+}
+local SNOW_CAP_COLOR = Color3.fromRGB(235, 235, 240)
+local function buildMountainRing(mountainFolder: Instance)
+	for _, ring in ipairs(MOUNTAIN_RINGS) do
+		local circumference = 2 * math.pi * ring.radius
+		local segmentCount = math.floor(circumference / ring.segWidth)
+		local heightSpread = ring.heightMax - ring.heightMin
+		for i = 1, segmentCount do
+			local angle = (i / segmentCount) * 360
+			local angleRad = math.rad(angle)
+			local wave = math.sin(angleRad * 3 + i * 0.7) * 0.5 + 0.5
+			local jitter = math.random() * 0.3
+			local height = ring.heightMin + (wave * 0.7 + jitter * 0.3) * heightSpread
+			local pos = Vector3.new(
+				math.cos(angleRad) * ring.radius,
+				GROUND_LEVEL,
+				math.sin(angleRad) * ring.radius
+			)
+			local segment = Instance.new("Part")
+			segment.Name = "MountainSeg"
+			segment.Size = Vector3.new(ring.segWidth * 1.05, height, ring.segThickness)
+			segment.CFrame = CFrame.new(pos + Vector3.new(0, height / 2, 0)) * CFrame.Angles(0, -angleRad, 0)
+			segment.Anchored = true
+			segment.CanCollide = true
+			segment.Material = Enum.Material.Rock
+			segment.Color = ring.colors[math.random(1, #ring.colors)]
+			segment.Parent = mountainFolder
+			if height >= ring.heightMax - (heightSpread * 0.2) then
+				local cap = Instance.new("Part")
+				cap.Name = "SnowCap"
+				cap.Shape = Enum.PartType.Ball
+				cap.Size = Vector3.new(3 + math.random() * 2, 2 + math.random() * 1.5, 3 + math.random() * 2)
+				cap.CFrame = CFrame.new(pos + Vector3.new(0, height + 1, 0))
+				cap.Anchored = true
+				cap.CanCollide = false
+				cap.Material = Enum.Material.Snow
+				cap.Color = SNOW_CAP_COLOR
+				cap.Parent = mountainFolder
+			end
+			if i % 40 == 0 then task.wait() end
+		end
 	end
 end
 
@@ -449,14 +616,16 @@ function MapGenerator.generate(): {string}
 	footpathFolder.Name = "MapFootpaths"
 	footpathFolder.Parent = Workspace
 
-	local wallFolder = Instance.new("Folder")
-	wallFolder.Name = "MapBoundary"
-	wallFolder.Parent = Workspace
-	buildPerimeterWall(wallFolder)
+	local mountainFolder = Instance.new("Folder")
+	mountainFolder.Name = "MapBoundary"
+	mountainFolder.Parent = Workspace
+	buildMountainRing(mountainFolder)
 
 	local routeCount = pickWeightedRouteCount()
 	local angles = pickSpreadAngles(routeCount, MIN_ANGLE_SEPARATION_DEG)
 	local routeIds: {string} = {}
+	local allWaypoints: {Vector3} = {}
+	local routeWaypointsList: {{Vector3}} = {}
 
 	for i = 1, routeCount do
 		local routeId = ROUTE_LETTERS[i]
@@ -495,6 +664,9 @@ function MapGenerator.generate(): {string}
 
 		local waypointCount = math.random(WAYPOINTS_PER_ROUTE_MIN, WAYPOINTS_PER_ROUTE_MAX)
 		local waypoints = buildWaypoints(spawnPos, BASE_POSITION, waypointCount, detourSide)
+		for _, wp in ipairs(waypoints) do
+			table.insert(allWaypoints, wp)
+		end
 		for idx, point in ipairs(waypoints) do
 			createWaypointPart(point, idx, routeFolder, ROUTE_COLORS[i])
 		end
@@ -505,9 +677,25 @@ function MapGenerator.generate(): {string}
 		-- Lay a flat stone footpath following this route
 		layRouteFootpath(waypoints, footpathFolder)
 
-		-- Decorate alongside this route (trees + rocks, fully natural theme)
-		decorateRoute(waypoints, decorationFolder)
+		table.insert(routeWaypointsList, waypoints)
 	end
+
+	-- Decoration (tree/rock/trunk model cloning) is the expensive part --
+	-- each clone involves MeshParts with collision geometry from the Creator
+	-- Store. Running ~50-100 of these synchronously in one frame is what
+	-- caused the long "Preparing..." freeze on join. We return the route
+	-- data immediately so WaveManager/EnvironmentSetup/LobbyBuilder can start
+	-- right away, and let decoration trickle in over the next second or two
+	-- in the background (task.wait() yields inside decorateRoute/
+	-- decorateOuterArea already spread this across many frames).
+	task.spawn(function()
+		-- Reset placed-item tracker each generation
+		placedItemPositions = {}
+		for _, waypoints in ipairs(routeWaypointsList) do
+			decorateRoute(waypoints, decorationFolder, allWaypoints)
+		end
+		decorateOuterArea(decorationFolder, allWaypoints)
+	end)
 
 	generatedRouteIds = routeIds
 	print("[MapGenerator] Generated " .. routeCount .. " route(s): " .. table.concat(routeIds, ", "))

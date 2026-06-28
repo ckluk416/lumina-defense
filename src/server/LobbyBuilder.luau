@@ -12,6 +12,11 @@ local ReplicatedStorage2 = game:GetService("ReplicatedStorage")
 local RemoteEvents = ReplicatedStorage2:WaitForChild("RemoteEvents")
 local UpdateMapState = RemoteEvents:WaitForChild("UpdateMapState") :: RemoteEvent
 local RequestReturnToLobby = RemoteEvents:WaitForChild("RequestReturnToLobby") :: RemoteEvent
+local UpdateMoney = RemoteEvents:WaitForChild("UpdateMoney") :: RemoteEvent
+local UpdateWave = RemoteEvents:WaitForChild("UpdateWave") :: RemoteEvent
+local UpdateBaseHP = RemoteEvents:WaitForChild("UpdateBaseHP") :: RemoteEvent
+local UpdateTowerCount = RemoteEvents:WaitForChild("UpdateTowerCount") :: RemoteEvent
+local UpdateWaveStats = RemoteEvents:WaitForChild("UpdateWaveStats") :: RemoteEvent
 local Assets = ReplicatedStorage:WaitForChild("Assets")
 
 local LeaderboardService = require(script.Parent:WaitForChild("LeaderboardService") :: ModuleScript)
@@ -233,6 +238,18 @@ local function buildPortal(folder: Instance)
 		debounce[player] = true
 		humanoidRootPart.CFrame = CFrame.new(GAME_SPAWN_POSITION)
 		UpdateMapState:FireClient(player, true)
+
+		-- Sync game state to player (they missed FireAllClients while in lobby)
+		local EconomyManager = require(script.Parent:WaitForChild("EconomyManager"))
+		local WaveManager = require(script.Parent:WaitForChild("WaveManager"))
+		local PlacementHandler = require(script.Parent:WaitForChild("PlacementHandler"))
+		UpdateMoney:FireClient(player, EconomyManager.getMoney(player))
+		local state = WaveManager.getState()
+		UpdateWave:FireClient(player, state.currentWave, state.status)
+		UpdateBaseHP:FireClient(player, state.baseHP, state.maxBaseHP)
+		UpdateWaveStats:FireClient(player, math.ceil(state.currentWave / 3), state.currentWave, state.basicKills, state.stealthKills, state.remaining, state.total)
+		UpdateTowerCount:FireClient(player, PlacementHandler.getPlayerTowerCount(player), PlacementHandler.getMaxTowersForPlayer(player))
+
 		task.delay(2, function() debounce[player] = nil end)
 	end)
 end

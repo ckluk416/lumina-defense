@@ -306,6 +306,9 @@ local function setShopVisible(visible: boolean)
 	for _, btn in ipairs(shopButtons) do
 		btn.Visible = visible
 	end
+	removeModeBtn.Visible = visible
+	upgradeModeBtn.Visible = visible
+	buySlotBtn.Visible = visible
 end
 
 local function setShopEnabled(enabled: boolean)
@@ -346,6 +349,18 @@ UpdateWave.OnClientEvent:Connect(function(waveNum, waveStatus)
 		setShopVisible(false)
 		startBattleBtn.Visible = false
 		stopPulse()
+		if removeModeActive then
+			removeModeActive = false
+			removeModeBtn.Text = "🗑 Mode Hapus"
+			removeModeBtn.BackgroundColor3 = Color3.fromRGB(120, 30, 30)
+			PlacementSystem.setRemoveModeEnabled(false)
+		end
+		if upgradeModeActive then
+			upgradeModeActive = false
+			upgradeModeBtn.Text = "⬆ Mode Upgrade"
+			upgradeModeBtn.BackgroundColor3 = Color3.fromRGB(120, 95, 20)
+			PlacementSystem.setUpgradeModeEnabled(false)
+		end
 
 	elseif waveStatus == "Intermission" then
 		statusLabel.Text       = "⏳ Intermission — Pasang tower, lalu MULAI!"
