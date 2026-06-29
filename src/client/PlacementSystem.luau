@@ -273,7 +273,7 @@ RunService.RenderStepped:Connect(function()
 				hoveredTowerModel = model
 				if removeHighlight then removeHighlight:Destroy() end
 				removeHighlight = Instance.new("Highlight")
-				removeHighlight.FillColor = if upgradeModeEnabled then Color3.fromRGB(255, 215, 60) else Color3.fromRGB(255, 60, 60)
+				removeHighlight.FillColor = if upgradeModeEnabled then Color3.fromRGB(255, 215, 60) else Color3.fromRGB(255, 180, 50)
 				removeHighlight.OutlineColor = Color3.fromRGB(255, 255, 255)
 				removeHighlight.FillTransparency = 0.5
 				removeHighlight.Parent = model

@@ -148,7 +148,7 @@ removeModeBtn.Name            = "RemoveModeBtn"
 removeModeBtn.Size            = UDim2.new(0, 130, 0, 36)
 removeModeBtn.Position        = UDim2.new(0, 15, 0, 90)
 removeModeBtn.BackgroundColor3= Color3.fromRGB(120, 30, 30)
-removeModeBtn.Text            = "🗑 Mode Hapus"
+removeModeBtn.Text            = "💰 Mode Jual"
 removeModeBtn.TextColor3      = Color3.fromRGB(255, 255, 255)
 removeModeBtn.TextSize        = 14
 removeModeBtn.Font            = Enum.Font.GothamBold
@@ -176,18 +176,18 @@ removeModeBtn.MouseButton1Click:Connect(function()
 	if removeModeActive then upgradeModeActive = false; upgradeModeBtn.Text = "⬆ Mode Upgrade"; upgradeModeBtn.BackgroundColor3 = Color3.fromRGB(120, 95, 20) end
 	PlacementSystem.setRemoveModeEnabled(removeModeActive)
 	if removeModeActive then
-		removeModeBtn.Text = "❌ Batal Hapus"
+		removeModeBtn.Text = "❌ Batal Jual"
 		removeModeBtn.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
-		statusLabel.Text = "🗑 Klik tower untuk menghapus (refund 50%)"
+		statusLabel.Text = "💰 Klik tower untuk menjual (refund 50%)"
 	else
-		removeModeBtn.Text = "🗑 Mode Hapus"
-		removeModeBtn.BackgroundColor3 = Color3.fromRGB(120, 30, 30)
+		removeModeBtn.Text = "💰 Mode Jual"
+		removeModeBtn.BackgroundColor3 = Color3.fromRGB(120, 60, 20)
 	end
 end)
 
 upgradeModeBtn.MouseButton1Click:Connect(function()
 	upgradeModeActive = not upgradeModeActive
-	if upgradeModeActive then removeModeActive = false; removeModeBtn.Text = "🗑 Mode Hapus"; removeModeBtn.BackgroundColor3 = Color3.fromRGB(120, 30, 30) end
+	if upgradeModeActive then removeModeActive = false; removeModeBtn.Text = "💰 Mode Jual"; removeModeBtn.BackgroundColor3 = Color3.fromRGB(120, 60, 20) end
 	PlacementSystem.setUpgradeModeEnabled(upgradeModeActive)
 	if upgradeModeActive then
 		upgradeModeBtn.Text = "❌ Batal Upgrade"
@@ -351,8 +351,8 @@ UpdateWave.OnClientEvent:Connect(function(waveNum, waveStatus)
 		stopPulse()
 		if removeModeActive then
 			removeModeActive = false
-			removeModeBtn.Text = "🗑 Mode Hapus"
-			removeModeBtn.BackgroundColor3 = Color3.fromRGB(120, 30, 30)
+			removeModeBtn.Text = "💰 Mode Jual"
+			removeModeBtn.BackgroundColor3 = Color3.fromRGB(120, 60, 20)
 			PlacementSystem.setRemoveModeEnabled(false)
 		end
 		if upgradeModeActive then
