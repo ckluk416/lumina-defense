@@ -276,6 +276,25 @@ returnToLobbyBtn.MouseButton1Click:Connect(function()
 	RequestReturnToLobby:FireServer()
 end)
 
+local earlyTallyBtn = Instance.new("TextButton")
+earlyTallyBtn.Name            = "EarlyTallyBtn"
+earlyTallyBtn.Size            = UDim2.new(0, 160, 0, 36)
+earlyTallyBtn.Position        = UDim2.new(1, -175, 0, 130)
+earlyTallyBtn.BackgroundColor3= Color3.fromRGB(180, 120, 30)
+earlyTallyBtn.Text            = "🏳 Early Tally"
+earlyTallyBtn.TextColor3      = Color3.fromRGB(255, 255, 255)
+earlyTallyBtn.TextSize        = 14
+earlyTallyBtn.Font            = Enum.Font.GothamBold
+earlyTallyBtn.Visible         = false
+earlyTallyBtn.ZIndex          = 10
+earlyTallyBtn.Parent          = screenGui
+Instance.new("UICorner", earlyTallyBtn).CornerRadius = UDim.new(0, 8)
+
+earlyTallyBtn.MouseButton1Click:Connect(function()
+	earlyTallyBtn.Visible = false
+	RequestReturnToLobby:FireServer()
+end)
+
 local pulseTween: Tween? = nil
 local function startPulse()
 	if pulseTween then pulseTween:Cancel() end
@@ -348,6 +367,7 @@ UpdateWave.OnClientEvent:Connect(function(waveNum, waveStatus)
 		setShopEnabled(false)
 		setShopVisible(false)
 		startBattleBtn.Visible = false
+		earlyTallyBtn.Visible = true
 		stopPulse()
 		if removeModeActive then
 			removeModeActive = false
@@ -367,13 +387,7 @@ UpdateWave.OnClientEvent:Connect(function(waveNum, waveStatus)
 		statusLabel.TextColor3 = Color3.fromRGB(100, 200, 255)
 		setShopEnabled(true)
 		setShopVisible(true)
-
-	elseif waveStatus == "Victory" then
-		statusLabel.Text      = "🏆 VICTORY! Semua wave selesai!"
-		statusLabel.TextColor3 = Color3.fromRGB(255, 220, 50)
-		setShopEnabled(false)
-		setShopVisible(false)
-		startBattleBtn.Visible = false
+		earlyTallyBtn.Visible = true
 
 	elseif waveStatus == "GameOver" then
 		statusLabel.Text      = "💀 GAME OVER — Base hancur!"
@@ -381,6 +395,7 @@ UpdateWave.OnClientEvent:Connect(function(waveNum, waveStatus)
 		setShopEnabled(false)
 		setShopVisible(false)
 		startBattleBtn.Visible = false
+		earlyTallyBtn.Visible = false
 		returnToLobbyBtn.Visible = true
 	end
 end)

@@ -321,4 +321,16 @@ function PlacementHandler.getMaxTowersForPlayer(player: Player): number
 	return MAX_TOWERS_PER_PLAYER + (extraSlots[player.UserId] or 0)
 end
 
+function PlacementHandler.resetAllTowers()
+	for _, entries in pairs(placedTowers) do
+		for _, entry in ipairs(entries) do
+			CombatManager.removeStructure(entry.model)
+			if entry.model and entry.model.Parent then entry.model:Destroy() end
+		end
+	end
+	placedTowers = {}
+	towerOwner = {}
+	extraSlots = {}
+end
+
 return PlacementHandler

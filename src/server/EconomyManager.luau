@@ -31,6 +31,10 @@ function EconomyManager.deductMoney(player: Player, amount: number): boolean
 	return false
 end
 
+function EconomyManager.resetAll()
+	playerMoney = {}
+end
+
 Players.PlayerAdded:Connect(EconomyManager.initPlayer)
 
 return EconomyManager

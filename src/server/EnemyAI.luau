@@ -36,6 +36,16 @@ function EnemyAI.getActiveEnemies()
 	return activeEnemies
 end
 
+function EnemyAI.clearAllEnemies()
+	for enemyModel, data in pairs(activeEnemies) do
+		if data.connection then data.connection:Disconnect() end
+		if data.walkConnection then data.walkConnection:Disconnect() end
+		activeEnemies[enemyModel] = nil
+		if enemyModel and enemyModel.Parent then enemyModel:Destroy() end
+	end
+	activeEnemies = {}
+end
+
 local function createHPBar(enemyModel: Model): Frame?
 	local rootPart = enemyModel.PrimaryPart or enemyModel:FindFirstChildOfClass("BasePart")
 	if not rootPart then return nil end

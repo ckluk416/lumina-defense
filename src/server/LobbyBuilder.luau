@@ -125,7 +125,7 @@ local function buildHowToPlay(folder: Instance)
 		"mencapai Base.",
 		"",
 		"• Pasang tower: klik tombol toko atau tombol [B][N][L][M]",
-		"• Hapus tower: tombol Mode Hapus, lalu klik tower-nya",
+		"• Jual tower: tombol Mode Jual, lalu klik tower-nya (refund 50%)",
 		"• Klik kanan / Esc: batal pasang tower",
 		"• Setiap 3 wave = 1 hari. Akhir hari = malam, musuh siluman",
 		"  muncul -- pasang Light Node untuk mendeteksinya!",
@@ -154,7 +154,7 @@ local function buildLeaderboard(folder: Instance)
 	refresh()
 	task.spawn(function()
 		while true do
-			task.wait(30)
+			task.wait(5)
 			refresh()
 		end
 	end)
@@ -256,6 +256,12 @@ end
 
 local function setupReturnToLobby()
 	RequestReturnToLobby.OnServerEvent:Connect(function(player: Player)
+		local WaveManager = require(script.Parent:WaitForChild("WaveManager"))
+		LeaderboardService.reportWave(WaveManager.getCurrentWave())
+
+		local MatchManager = require(script.Parent:WaitForChild("MatchManager"))
+		MatchManager.resetMatch()
+
 		local character = player.Character
 		if not character then return end
 		local humanoidRootPart = character:FindFirstChild("HumanoidRootPart") :: BasePart?
