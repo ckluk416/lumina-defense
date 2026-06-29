@@ -10,6 +10,8 @@ local LeaderboardService = require(script.Parent:WaitForChild("LeaderboardServic
 local PathPreview = require(script.Parent:WaitForChild("PathPreview") :: ModuleScript)
 local EnvironmentSetup = require(script.Parent:WaitForChild("EnvironmentSetup") :: ModuleScript)
 local LightingController = require(script.Parent:WaitForChild("LightingController") :: ModuleScript)
+local BossConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("BossConfig") :: ModuleScript)
+local PlacementHandler = require(script.Parent:WaitForChild("PlacementHandler") :: ModuleScript)
 local Assets = ReplicatedStorage:WaitForChild("Assets")
 
 local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
@@ -214,6 +216,36 @@ function WaveManager.spawnEnemy(enemyName: string, routeId: string, speedOverrid
 	EnemyAI.moveAlongWaypoints(newEnemy, waypoints)
 end
 
+function WaveManager.spawnBoss(routeId: string, bossStats: {hp: number, damage: number, speed: number, reward: number})
+	local original = Assets:FindFirstChild("BasicEnemy")
+	if not original or not original:IsA("Model") then
+		warn("[WaveManager] Could not find BasicEnemy model for boss!")
+		return
+	end
+
+	local boss = original:Clone() :: Model
+	boss.Name = "BossEnemy"
+
+	local spawnPos = EnvironmentSetup.getSpawnPosition(routeId)
+	if spawnPos then
+		boss:PivotTo(CFrame.new(spawnPos))
+	end
+	boss:ScaleTo(BossConfig.getBossScale())
+
+	for _, part in ipairs(boss:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part.Color = Color3.fromRGB(180, 30, 30)
+		end
+	end
+
+	boss.Parent = Workspace
+
+	EnemyAI.setupEnemy(boss, bossStats.hp, bossStats.speed, bossStats.damage, false, bossStats.reward, true)
+
+	local waypoints = getRouteWaypoints(routeId)
+	EnemyAI.moveAlongWaypoints(boss, waypoints)
+end
+
 function WaveManager.damageBase(amount: number)
 	baseHP = math.max(0, baseHP - amount)
 	UpdateBaseHP:FireAllClients(baseHP, MAX_BASE_HP)
@@ -251,6 +283,22 @@ function WaveManager.startWave()
 	currentWave += 1
 	local waveData = getWaveData(currentWave)
 
+	if BossConfig.isBossWave(currentWave) then
+		local bossNum = BossConfig.getBossNumber(currentWave)
+		local bossStats = BossConfig.getStats(bossNum)
+		local numRoutes = math.max(1, #EnvironmentSetup.getRouteIds())
+		local bossRoute = math.random(1, numRoutes)
+
+		table.insert(waveData.enemies, {name = "BossEnemy", count = 1, spawnDelay = 1.0, routeIndex = bossRoute, _bossStats = bossStats})
+
+		local escortCount = BossConfig.getEscortCount(PlacementHandler.getTotalTowerCount())
+		if escortCount > 0 then
+			table.insert(waveData.enemies, {name = "BasicEnemy", count = escortCount, spawnDelay = 2.5, routeIndex = bossRoute, speed = 12})
+		end
+
+		print("[WaveManager] BOSS wave " .. currentWave .. "! Boss #" .. bossNum .. " route " .. bossRoute .. ", escort " .. escortCount)
+	end
+
 	status = "Active"
 	waitingForStartSignal = false
 	print("[WaveManager] Wave " .. currentWave .. " started!")
@@ -278,10 +326,14 @@ function WaveManager.startWave()
 		local resolvedRouteId = resolveRouteId(enemyGroup.routeIndex)
 		local speedOverride: number? = enemyGroup.speed
 		task.spawn(function()
-			for _ = 1, enemyGroup.count do
-				if status ~= "Active" or currentWave ~= thisWaveToken then return end
-				WaveManager.spawnEnemy(enemyGroup.name, resolvedRouteId, speedOverride)
-				task.wait(enemyGroup.spawnDelay)
+			if enemyGroup.name == "BossEnemy" then
+				WaveManager.spawnBoss(resolvedRouteId, enemyGroup._bossStats)
+			else
+				for _ = 1, enemyGroup.count do
+					if status ~= "Active" or currentWave ~= thisWaveToken then return end
+					WaveManager.spawnEnemy(enemyGroup.name, resolvedRouteId, speedOverride)
+					task.wait(enemyGroup.spawnDelay)
+				end
 			end
 
 			groupsRemaining -= 1
@@ -332,7 +384,8 @@ function WaveManager.endWave()
 
 		waitingForStartSignal = true
 		local nextWaveIsNight = (nextWave % 3 == 0)
-		RequestStartWave:FireAllClients("ready", nextWave, nextWaveIsNight)
+		local nextWaveIsBoss = BossConfig.isBossWave(nextWave)
+		RequestStartWave:FireAllClients("ready", nextWave, nextWaveIsNight, nextWaveIsBoss)
 	end)
 end
 
@@ -348,7 +401,7 @@ function WaveManager.beginMatch()
 		broadcastStats()
 
 		waitingForStartSignal = true
-		RequestStartWave:FireAllClients("ready", 1)
+		RequestStartWave:FireAllClients("ready", 1, false, BossConfig.isBossWave(1))
 	end)
 end
 

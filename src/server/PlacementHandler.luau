@@ -321,6 +321,14 @@ function PlacementHandler.getMaxTowersForPlayer(player: Player): number
 	return MAX_TOWERS_PER_PLAYER + (extraSlots[player.UserId] or 0)
 end
 
+function PlacementHandler.getTotalTowerCount(): number
+	local total = 0
+	for _, entries in pairs(placedTowers) do
+		total += #entries
+	end
+	return total
+end
+
 function PlacementHandler.resetAllTowers()
 	for _, entries in pairs(placedTowers) do
 		for _, entry in ipairs(entries) do

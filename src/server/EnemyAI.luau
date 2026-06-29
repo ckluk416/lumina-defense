@@ -46,14 +46,17 @@ function EnemyAI.clearAllEnemies()
 	activeEnemies = {}
 end
 
-local function createHPBar(enemyModel: Model): Frame?
+local function createHPBar(enemyModel: Model, isBoss: boolean?): Frame?
 	local rootPart = enemyModel.PrimaryPart or enemyModel:FindFirstChildOfClass("BasePart")
 	if not rootPart then return nil end
 
+	local barWidth = if isBoss then 120 else 80
+	local offsetY = if isBoss then 10 else 5
+
 	local billboard = Instance.new("BillboardGui")
 	billboard.Name        = "HPBar"
-	billboard.Size        = UDim2.new(0, 80, 0, 10)
-	billboard.StudsOffset = Vector3.new(0, 5, 0)
+	billboard.Size        = UDim2.new(0, barWidth, 0, 10)
+	billboard.StudsOffset = Vector3.new(0, offsetY, 0)
 	billboard.AlwaysOnTop = false
 	billboard.Adornee     = rootPart
 	billboard.Parent      = enemyModel
@@ -65,13 +68,33 @@ local function createHPBar(enemyModel: Model): Frame?
 	bg.Parent            = billboard
 	Instance.new("UICorner", bg).CornerRadius = UDim.new(0, 4)
 
+	local fillColor = if isBoss then Color3.fromRGB(180, 50, 255) else Color3.fromRGB(0, 220, 60)
 	local fill = Instance.new("Frame")
 	fill.Name            = "Fill"
 	fill.Size            = UDim2.new(1, 0, 1, 0)
-	fill.BackgroundColor3= Color3.fromRGB(0, 220, 60)
+	fill.BackgroundColor3= fillColor
 	fill.BorderSizePixel = 0
 	fill.Parent          = bg
 	Instance.new("UICorner", fill).CornerRadius = UDim.new(0, 4)
+
+	if isBoss then
+		local nameTag = Instance.new("BillboardGui")
+		nameTag.Name = "BossNameTag"
+		nameTag.Size = UDim2.new(0, 140, 0, 20)
+		nameTag.StudsOffset = Vector3.new(0, offsetY + 12, 0)
+		nameTag.AlwaysOnTop = true
+		nameTag.Adornee = rootPart
+		nameTag.Parent = enemyModel
+		local label = Instance.new("TextLabel")
+		label.Size = UDim2.new(1, 0, 1, 0)
+		label.BackgroundTransparency = 1
+		label.Text = "👑 BOSS"
+		label.TextColor3 = Color3.fromRGB(200, 80, 255)
+		label.Font = Enum.Font.GothamBold
+		label.TextSize = 18
+		label.TextStrokeTransparency = 0.3
+		label.Parent = nameTag
+	end
 
 	return fill
 end
@@ -371,16 +394,18 @@ function EnemyAI.setupEnemy(
 	speed:      number,
 	damage:     number,
 	isStealth:  boolean?,
-	reward:     number?
+	reward:     number?,
+	isBoss:     boolean?
 )
 	local stealthValue = if isStealth ~= nil then isStealth else false
 	local rewardValue  = if reward ~= nil then reward else 15
+	local bossValue    = if isBoss ~= nil then isBoss else false
 
 	-- Fix the rig BEFORE creating the HP bar / setting up data, so the
 	-- Motor6Ds exist by the time the walk animation is loaded below.
 	ensureR6Motors(enemyModel)
 
-	local hpBarFill = createHPBar(enemyModel)
+	local hpBarFill = createHPBar(enemyModel, bossValue)
 
 	activeEnemies[enemyModel] = {
 		model     = enemyModel,
