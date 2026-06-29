@@ -12,6 +12,25 @@ local storeOk, store = pcall(function()
 end)
 
 local memoryStore: {[string]: number} = {}
+local memoryNames: {[string]: string}  = {}
+
+-- Toggle untuk mengisi dummy entries agar leaderboard tidak kosong (debugink lur)
+local USE_DUMMY_DATA = true
+local DUMMY_ENTRIES = {
+	{"Dummy1", 12},
+	{"Dummy2", 8},
+	{"Dummy3", 5},
+	{"Dummy4", 3},
+}
+
+if USE_DUMMY_DATA then
+	for i, d in ipairs(DUMMY_ENTRIES) do
+		local key = "dummy_" .. i
+		memoryStore[key] = d[2]
+		memoryNames[key] = d[1]
+	end
+	print("[LeaderboardService] " .. #DUMMY_ENTRIES .. " dummy entries seeded")
+end
 
 function LeaderboardService.reportWave(wave: number)
 	for _, player in ipairs(Players:GetPlayers()) do
@@ -26,6 +45,7 @@ function LeaderboardService.reportWave(wave: number)
 			end)
 		else
 			memoryStore[key] = math.max(memoryStore[key] or 0, wave)
+			memoryNames[key] = player.DisplayName or player.Name
 		end
 	end
 end
@@ -55,11 +75,16 @@ function LeaderboardService.getTop(count: number): {{name: string, wave: number}
 	end
 
 	for _, entry in ipairs(raw) do
-		local name = "Player" .. entry.key
-		if storeOk then
-			pcall(function()
-				name = Players:GetNameFromUserIdAsync(tonumber(entry.key))
+		local name: string
+		if string.match(entry.key, "^dummy_") then
+			name = memoryNames[entry.key] or "Dummy"
+		elseif storeOk then
+			local success, result = pcall(function()
+				return Players:GetNameFromUserIdAsync(tonumber(entry.key))
 			end)
+			name = if success then result else "Player" .. entry.key
+		else
+			name = memoryNames[entry.key] or "Player" .. entry.key
 		end
 		table.insert(results, {name = name, wave = entry.wave})
 	end
